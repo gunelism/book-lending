@@ -35,6 +35,7 @@ import {
 } from 'react-admin';
 import { euros, MoneyField, StatusField, useBulkNotify, useIsAdmin } from '../components/common';
 import { LoanActions } from '../components/LoanActions';
+import { useFieldHelp } from '../formHelp';
 import type { LibraryDataProvider } from '../dataProvider';
 
 const memberFilters = [
@@ -133,11 +134,7 @@ export const MemberEdit = () => (
           }
         />
         <TextField source="cardNumber" label="Card number" />
-        <TextInput source="firstName" validate={required()} />
-        <TextInput source="lastName" validate={required()} />
-        <TextInput source="email" validate={[required(), email()]} />
-        <TextInput source="phone" />
-        <BooleanInput source="isActive" label="Active" />
+        <MemberFields />
       </TabbedForm.Tab>
       <TabbedForm.Tab label="Loans" path="loans">
         <ReferenceManyField
@@ -165,15 +162,25 @@ export const MemberEdit = () => (
   </Edit>
 );
 
+/** Helper texts come from the API's field definitions — the same ones the Help chat answers from. */
+const MemberFields = ({ create = false }: { create?: boolean }) => {
+  const help = useFieldHelp('member');
+  return (
+    <>
+      <TextInput source="firstName" validate={required()} helperText={help('firstName')} />
+      <TextInput source="lastName" validate={required()} helperText={help('lastName')} />
+      <TextInput source="email" validate={[required(), email()]} helperText={help('email')} fullWidth />
+      <TextInput source="phone" helperText={help('phone')} />
+      {create && <TextInput source="cardNumber" label="Card number" helperText={help('cardNumber')} fullWidth />}
+      <BooleanInput source="isActive" label="Active" defaultValue={create ? true : undefined} helperText={help('isActive')} />
+    </>
+  );
+};
+
 export const MemberCreate = () => (
   <Create redirect="edit">
     <SimpleForm>
-      <TextInput source="firstName" validate={required()} />
-      <TextInput source="lastName" validate={required()} />
-      <TextInput source="email" validate={[required(), email()]} />
-      <TextInput source="phone" />
-      <TextInput source="cardNumber" helperText="Leave empty to generate one (format M1234567)" />
-      <BooleanInput source="isActive" defaultValue />
+      <MemberFields create />
     </SimpleForm>
   </Create>
 );

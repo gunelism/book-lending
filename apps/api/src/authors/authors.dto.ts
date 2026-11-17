@@ -7,33 +7,33 @@ import { Author } from '../entities';
 
 @InputType()
 export class CreateAuthorInput {
-  @Field()
+  @Field({ description: "Given name, as printed on the book." })
   @Clean()
   @IsString()
   @Length(1, 100)
   firstName: string;
 
-  @Field()
+  @Field({ description: "Family name. The author list is sorted by it." })
   @Clean()
   @IsString()
   @Length(1, 100)
   lastName: string;
 
-  @Field({ nullable: true })
+  @Field({ description: "Short biography. Optional plain text.", nullable: true })
   @Clean()
   @IsOptional()
   @IsString()
   @MaxLength(5000)
   bio?: string;
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Int, { description: "Year of birth, if known. Optional.", nullable: true })
   @IsOptional()
   @IsInt()
   @Min(1000)
   @Max(new Date().getFullYear())
   birthYear?: number;
 
-  @Field({ nullable: true })
+  @Field({ description: "Used to filter the author list. Optional.", nullable: true })
   @Clean()
   @IsOptional()
   @IsString()

@@ -2,6 +2,7 @@ import { Chip } from '@mui/material';
 import type { ReactNode } from 'react';
 import { AppBar, Layout as RaLayout, TitlePortal } from 'react-admin';
 import { useRole } from './components/common';
+import { HelpChat } from './components/HelpChat';
 
 /** Always shows which role you're signed in with, so the restricted view is never a surprise. */
 const RoleChip = () => {
@@ -24,4 +25,10 @@ const LibraryAppBar = () => (
   </AppBar>
 );
 
-export const Layout = ({ children }: { children: ReactNode }) => <RaLayout appBar={LibraryAppBar}>{children}</RaLayout>;
+export const Layout = ({ children }: { children: ReactNode }) => (
+  <RaLayout appBar={LibraryAppBar}>
+    {children}
+    {/* Form help chat, available on every page */}
+    <HelpChat />
+  </RaLayout>
+);

@@ -1,11 +1,12 @@
 {
-	# Issue certificates from Caddy's own local CA (no public ACME, no internet
-	# exposure). HTTP on :80 is redirected to HTTPS automatically.
-	local_certs
 	admin off
 }
 
-localhost {
+# SITE_ADDRESS: "localhost" for local Docker, or your domain (e.g. library.example.com).
+# CADDY_TLS:    "internal" = Caddy's local CA (localhost), or an email address to get a
+#               free Let's Encrypt certificate for a real domain. HTTP always redirects to HTTPS.
+{$SITE_ADDRESS:localhost} {
+	tls {$CADDY_TLS:internal}
 	encode zstd gzip
 
 	header {

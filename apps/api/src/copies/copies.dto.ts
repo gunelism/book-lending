@@ -10,30 +10,30 @@ export const MANUAL_COPY_STATUSES = [CopyStatus.AVAILABLE, CopyStatus.MAINTENANC
 
 @InputType()
 export class AddCopiesInput {
-  @Field(() => Int)
+  @Field(() => Int, { description: "The book these physical copies belong to." })
   @IsInt()
   @Min(1)
   bookId: number;
 
-  @Field(() => Int, { defaultValue: 1 })
+  @Field(() => Int, { description: "How many identical copies to add at once. Each gets its own generated barcode.", defaultValue: 1 })
   @IsInt()
   @Min(1)
   @Max(50)
   count = 1;
 
-  @Field(() => CopyCondition, { defaultValue: CopyCondition.NEW })
+  @Field(() => CopyCondition, { description: "Physical state of the new copies: New, Good, Fair or Poor.", defaultValue: CopyCondition.NEW })
   @IsEnum(CopyCondition)
   condition: CopyCondition = CopyCondition.NEW;
 }
 
 @InputType()
 export class UpdateCopyInput {
-  @Field(() => CopyCondition, { nullable: true })
+  @Field(() => CopyCondition, { description: "Physical state: New, Good, Fair or Poor. When lending by book, the best-condition copy is chosen first.", nullable: true })
   @IsOptional()
   @IsEnum(CopyCondition)
   condition?: CopyCondition;
 
-  @Field(() => CopyStatus, { nullable: true })
+  @Field(() => CopyStatus, { description: "Available = on the shelf. Maintenance = out for repair, cannot be lent. Lost = gone. On loan is set only by checkout and return, never by hand; a copy that is on loan cannot be changed here.", nullable: true })
   @IsOptional()
   @IsIn(MANUAL_COPY_STATUSES, { message: 'status can only be set to AVAILABLE, MAINTENANCE or LOST by hand' })
   status?: CopyStatus;

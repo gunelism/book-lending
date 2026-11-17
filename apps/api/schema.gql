@@ -3,9 +3,27 @@
 # ------------------------------------------------------
 
 input AddCopiesInput {
+  """The book these physical copies belong to."""
   bookId: Int!
+
+  """Physical state of the new copies: New, Good, Fair or Poor."""
   condition: CopyCondition! = NEW
+
+  """
+  How many identical copies to add at once. Each gets its own generated barcode.
+  """
   count: Int! = 1
+}
+
+input AskHelpInput {
+  """The form the user is looking at, if any"""
+  form: FormName
+  history: [ChatTurnInput!]
+
+  """
+  The question, e.g. "What does Replacement cost mean?"
+  """
+  question: String!
 }
 
 type Author {
@@ -102,15 +120,40 @@ type BulkResult {
   succeeded: [Int!]!
 }
 
+enum ChatRole {
+  ASSISTANT
+  USER
+}
+
+input ChatTurnInput {
+  content: String!
+  role: ChatRole!
+}
+
 input CheckoutInput {
+  """
+  Scan or type the barcode sticker on the copy (e.g. LIB000000042) to lend that exact copy. Fill in Barcode OR Book, not both.
+  """
   barcode: String
 
-  """Lend any available copy of this book"""
+  """
+  Lend any available copy of this book; the copy in the best condition is picked automatically. Fill in Book OR Barcode, not both. Only books with a copy on the shelf are listed.
+  """
   bookId: Int
+
+  """
+  A specific physical copy by internal id (for integrations; the admin form uses Book or Barcode instead).
+  """
   copyId: Int
 
-  """Defaults to today + the standard loan period"""
+  """
+  Optional. Leave empty for the standard 14-day loan. If you set it, it must be in the future and at most 60 days away.
+  """
   dueDate: DateTime
+
+  """
+  Who is borrowing. Only active members in good standing can borrow; the New loan form shows live whether the chosen member is allowed, and why not.
+  """
   memberId: Int!
 }
 
@@ -142,37 +185,99 @@ enum CopyStatus {
 }
 
 input CreateAuthorInput {
+  """Short biography. Optional plain text."""
   bio: String
+
+  """Year of birth, if known. Optional."""
   birthYear: Int
+
+  """Given name, as printed on the book."""
   firstName: String!
+
+  """Family name. The author list is sorted by it."""
   lastName: String!
+
+  """Used to filter the author list. Optional."""
   nationality: String
 }
 
 input CreateBookInput {
+  """
+  The book's author. Pick an existing author; if they are missing, create them first under Authors.
+  """
   authorId: Int!
+
+  """Short blurb for staff. Optional plain text."""
   description: String
+
+  """
+  Main shelf category, used to filter the catalogue. Pick the closest one.
+  """
   genre: Genre!
+
+  """
+  The edition's ISBN, from the back cover or copyright page. ISBN-13 (e.g. 978-0-306-40615-7) or ISBN-10; hyphens and spaces are optional. The check digit is verified, so a mistyped ISBN is rejected. Must be unique: one catalogue entry per edition.
+  """
   isbn: String!
+
+  """Year this edition was published, from the copyright page. Optional."""
   publishedYear: Int
+
+  """
+  What a member is charged if they lose a copy. Stored in euro cents; the admin form takes euros (enter 25 for EUR 25.00). Defaults to EUR 25.00.
+  """
   replacementCostCents: Int
+
+  """
+  The title as printed on the cover, including any subtitle after a colon.
+  """
   title: String!
 }
 
 input CreateMemberInput {
+  """
+  Library card number: the letter M followed by 7 digits (e.g. M0001234). Leave empty to generate one automatically. It cannot be changed afterwards.
+  """
   cardNumber: String
+
+  """Contact email. Must be unique across members; stored in lower case."""
   email: String!
+
+  """Member's given name."""
   firstName: String!
+
+  """
+  Inactive members keep their history but cannot borrow. Deactivate members who have loan history instead of deleting them.
+  """
   isActive: Boolean
+
+  """Member's family name. The member list is sorted by it."""
   lastName: String!
+
+  """Optional contact number. Digits, spaces and + ( ) . - only."""
   phone: String
 }
 
 input CreateUserInput {
+  """The staff member's sign-in email. Must be unique."""
   email: String!
+
+  """
+  Inactive staff cannot sign in, and their open sessions end immediately. New GitHub sign-ups start inactive until an admin activates them.
+  """
   isActive: Boolean
+
+  """Display name shown in the admin."""
   name: String!
+
+  """
+  At least 12 characters, with an upper-case letter, a lower-case letter and a digit. Stored only as an argon2id hash.
+  """
   password: String!
+
+  """
+  Admin: everything, including catalogue edits, deletions, staff accounts and waiving fines. Librarian: lending, returns, renewals and members; the catalogue is read-only.
+  """
   role: Role!
 }
 
@@ -180,6 +285,38 @@ input CreateUserInput {
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
+
+type FormDefinition {
+  fields: [FormField!]!
+  name: FormName!
+  purpose: String!
+  title: String!
+}
+
+type FormField {
+  """Help text for the field (the input type’s description)"""
+  help: String!
+  label: String!
+  name: String!
+  options: [String!]
+  required: Boolean!
+
+  """Human-readable validation rules, from the field’s validators"""
+  rules: [String!]!
+
+  """GraphQL type name: String, Int, Boolean, DateTime or an enum"""
+  type: String!
+}
+
+"""An admin form the help chat can explain"""
+enum FormName {
+  author
+  book
+  checkout
+  copy
+  member
+  user
+}
 
 enum Genre {
   BIOGRAPHY
@@ -194,6 +331,15 @@ enum Genre {
   SCIENCE
   SCIENCE_FICTION
   THRILLER
+}
+
+type HelpAnswer {
+  answer: String!
+}
+
+type HelpChatStatus {
+  enabled: Boolean!
+  model: String!
 }
 
 type Loan {
@@ -306,6 +452,7 @@ type MemberPage {
 
 type Mutation {
   addCopies(input: AddCopiesInput!): [BookCopy!]!
+  askHelp(input: AskHelpInput!): HelpAnswer!
 
   """Bulk admin action: mark many loans as returned"""
   bulkReturnLoans(input: LoanIdsInput!): BulkResult!
@@ -344,6 +491,8 @@ type Query {
   books(filter: BookFilter, page: Int! = 1, perPage: Int! = 25, sortField: String, sortOrder: SortOrder): BookPage!
   copies(filter: CopyFilter, page: Int! = 1, perPage: Int! = 25, sortField: String, sortOrder: SortOrder): CopyPage!
   copy(id: Int!): BookCopy!
+  forms: [FormDefinition!]!
+  helpChatStatus: HelpChatStatus!
   loan(id: Int!): Loan!
   loans(filter: LoanFilter, page: Int! = 1, perPage: Int! = 25, sortField: String, sortOrder: SortOrder): LoanPage!
   member(id: Int!): Member!
@@ -363,41 +512,108 @@ enum SortOrder {
 }
 
 input UpdateAuthorInput {
+  """Short biography. Optional plain text."""
   bio: String
+
+  """Year of birth, if known. Optional."""
   birthYear: Int
+
+  """Given name, as printed on the book."""
   firstName: String
+
+  """Family name. The author list is sorted by it."""
   lastName: String
+
+  """Used to filter the author list. Optional."""
   nationality: String
 }
 
 input UpdateBookInput {
+  """
+  The book's author. Pick an existing author; if they are missing, create them first under Authors.
+  """
   authorId: Int
+
+  """Short blurb for staff. Optional plain text."""
   description: String
+
+  """
+  Main shelf category, used to filter the catalogue. Pick the closest one.
+  """
   genre: Genre
+
+  """
+  The edition's ISBN, from the back cover or copyright page. ISBN-13 (e.g. 978-0-306-40615-7) or ISBN-10; hyphens and spaces are optional. The check digit is verified, so a mistyped ISBN is rejected. Must be unique: one catalogue entry per edition.
+  """
   isbn: String
+
+  """Year this edition was published, from the copyright page. Optional."""
   publishedYear: Int
+
+  """
+  What a member is charged if they lose a copy. Stored in euro cents; the admin form takes euros (enter 25 for EUR 25.00). Defaults to EUR 25.00.
+  """
   replacementCostCents: Int
+
+  """
+  The title as printed on the cover, including any subtitle after a colon.
+  """
   title: String
 }
 
 input UpdateCopyInput {
+  """
+  Physical state: New, Good, Fair or Poor. When lending by book, the best-condition copy is chosen first.
+  """
   condition: CopyCondition
+
+  """
+  Available = on the shelf. Maintenance = out for repair, cannot be lent. Lost = gone. On loan is set only by checkout and return, never by hand; a copy that is on loan cannot be changed here.
+  """
   status: CopyStatus
 }
 
 input UpdateMemberInput {
+  """
+  Library card number: the letter M followed by 7 digits (e.g. M0001234). Leave empty to generate one automatically. It cannot be changed afterwards.
+  """
   cardNumber: String
+
+  """Contact email. Must be unique across members; stored in lower case."""
   email: String
+
+  """Member's given name."""
   firstName: String
+
+  """
+  Inactive members keep their history but cannot borrow. Deactivate members who have loan history instead of deleting them.
+  """
   isActive: Boolean
+
+  """Member's family name. The member list is sorted by it."""
   lastName: String
+
+  """Optional contact number. Digits, spaces and + ( ) . - only."""
   phone: String
 }
 
 input UpdateUserInput {
+  """
+  Inactive staff cannot sign in, and their open sessions end immediately. You cannot deactivate yourself.
+  """
   isActive: Boolean
+
+  """Display name shown in the admin."""
   name: String
+
+  """
+  Leave empty to keep the current password. A new one needs 12+ characters with upper-case, lower-case and a digit, and signs the user out everywhere.
+  """
   password: String
+
+  """
+  Admin: everything, including catalogue edits, deletions, staff accounts and waiving fines. Librarian: lending, returns, renewals and members; the catalogue is read-only. You cannot change your own role.
+  """
   role: Role
 }
 

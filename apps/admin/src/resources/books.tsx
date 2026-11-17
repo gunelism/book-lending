@@ -34,6 +34,7 @@ import {
 import { CopiesInline } from '../components/CopiesInline';
 import { CoverUploader } from '../components/CoverUploader';
 import { CoverThumb, GENRES, MoneyField, ReadOnlyBadge, StatusField, useIsAdmin } from '../components/common';
+import { useFieldHelp } from '../formHelp';
 
 const bookFilters = [
   <SearchInput key="q" source="q" alwaysOn placeholder="Title, ISBN or author" />,
@@ -70,25 +71,30 @@ export const BookList = () => {
   );
 };
 
-const bookFields = (
-  <>
-    <TextInput source="title" validate={required()} fullWidth />
-    <ReferenceInput source="authorId" reference="authors">
-      <AutocompleteInput filterToQuery={(q: string) => ({ q })} validate={required()} />
-    </ReferenceInput>
-    <TextInput source="isbn" label="ISBN" validate={required()} helperText="ISBN-10 or ISBN-13; the checksum is verified" />
-    <SelectInput source="genre" choices={GENRES} validate={required()} />
-    <NumberInput source="publishedYear" label="Published year" />
-    <NumberInput
-      source="replacementCostCents"
-      label="Replacement cost (€)"
-      format={(v: number | null) => (v == null ? '' : v / 100)}
-      parse={(v: string) => (v === '' ? null : Math.round(Number(v) * 100))}
-      helperText="Charged when a copy is lost"
-    />
-    <TextInput source="description" multiline fullWidth minRows={3} />
-  </>
-);
+/** Helper texts come from the API's field definitions — the same ones the Help chat answers from. */
+const BookFields = () => {
+  const help = useFieldHelp('book');
+  return (
+    <>
+      <TextInput source="title" validate={required()} fullWidth helperText={help('title')} />
+      <ReferenceInput source="authorId" reference="authors">
+        <AutocompleteInput filterToQuery={(q: string) => ({ q })} validate={required()} helperText={help('authorId')} />
+      </ReferenceInput>
+      <TextInput source="isbn" label="ISBN" validate={required()} helperText={help('isbn')} fullWidth />
+      <SelectInput source="genre" choices={GENRES} validate={required()} helperText={help('genre')} />
+      <NumberInput source="publishedYear" label="Published year" helperText={help('publishedYear')} />
+      <NumberInput
+        source="replacementCostCents"
+        label="Replacement cost (€)"
+        format={(v: number | null) => (v == null ? '' : v / 100)}
+        parse={(v: string) => (v === '' ? null : Math.round(Number(v) * 100))}
+        helperText={help('replacementCostCents')}
+        fullWidth
+      />
+      <TextInput source="description" multiline fullWidth minRows={3} helperText={help('description')} />
+    </>
+  );
+};
 
 const BookEditToolbar = () => (
   <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -103,7 +109,7 @@ export const BookEdit = () => (
     <TabbedForm toolbar={<BookEditToolbar />}>
       <TabbedForm.Tab label="Details">
         <CoverUploader />
-        {bookFields}
+        <BookFields />
       </TabbedForm.Tab>
       <TabbedForm.Tab label="Copies" path="copies">
         <CopiesInline />
@@ -131,7 +137,9 @@ const BookLoans = () => (
 
 export const BookCreate = () => (
   <Create redirect="edit">
-    <SimpleForm defaultValues={{ replacementCostCents: 2500 }}>{bookFields}</SimpleForm>
+    <SimpleForm defaultValues={{ replacementCostCents: 2500 }}>
+      <BookFields />
+    </SimpleForm>
   </Create>
 );
 

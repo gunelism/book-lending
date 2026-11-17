@@ -5,6 +5,7 @@ import LoanIcon from '@mui/icons-material/SwapHoriz';
 import MemberIcon from '@mui/icons-material/People';
 import UserIcon from '@mui/icons-material/AdminPanelSettings';
 import { Admin, Resource } from 'react-admin';
+import { CatchAll } from './AccessDenied';
 import { authProvider, type Role } from './authProvider';
 import { Dashboard } from './Dashboard';
 import { dataProvider } from './dataProvider';
@@ -29,6 +30,7 @@ export const App = () => (
     authProvider={authProvider}
     loginPage={LoginPage}
     dashboard={Dashboard}
+    catchAll={CatchAll}
     layout={Layout}
     title="Library Admin"
     requireAuth

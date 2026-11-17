@@ -1,40 +1,53 @@
-# Book Lending Library — local stack
+# Book Lending Library
 #
 #   cp .env.example .env      # then edit the secrets
 #   docker compose up --build
 #   open https://localhost
 #
 # Services
-#   caddy     HTTPS reverse proxy (local CA) + serves the React-Admin build
+#   caddy     HTTPS reverse proxy + serves the React-Admin build
+#             (local CA on localhost, automatic Let's Encrypt on a real domain)
 #   api       NestJS GraphQL API (runs migrations on start)
-#   postgres  PostgreSQL 17 (stand-in for a managed DB such as Neon/Supabase/RDS)
-#   minio     S3-compatible object storage (MinIO-compatible "silo" build; stand-in for AWS S3 / Cloudflare R2)
-#   api-test  e2e test runner, only started with --profile test
+#
+# Where the data lives is decided ONLY by .env (DATABASE_URL, S3_*):
+#   - managed services (Neon/Supabase + Cloudflare R2/AWS S3) for a real deployment, or
+#   - the local stand-ins below, enabled explicitly with COMPOSE_PROFILES=local-services.
+# The API logs which one it is using at startup, so it is never a silent fallback.
+#
+#   postgres  PostgreSQL 17          (profile: local-services)
+#   minio     S3-compatible storage  (profile: local-services)
+#   api-test  e2e test runner        (profile: test, needs local-services)
 
 name: book-lending
 
 x-api-env: &api-env
   NODE_ENV: production
   PORT: 3000
-  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-  S3_ENDPOINT: http://minio:9000
+  DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+  DATABASE_SSL: ${DATABASE_SSL:-false}
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_ACCESS_KEY: ${S3_ACCESS_KEY}
   S3_SECRET_KEY: ${S3_SECRET_KEY}
   S3_BUCKET: ${S3_BUCKET:-library-covers}
-  S3_FORCE_PATH_STYLE: "true"
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
   SESSION_SECRET: ${SESSION_SECRET}
   CSRF_SECRET: ${CSRF_SECRET}
   COOKIE_SECURE: "true"
-  PUBLIC_URL: https://localhost
+  PUBLIC_URL: ${PUBLIC_URL:-https://localhost}
   GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
   GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_BASE_URL: ${AI_BASE_URL:-https://api.groq.com/openai/v1}
+  AI_MODEL: ${AI_MODEL:-openai/gpt-oss-20b}
+  AI_REASONING_EFFORT: ${AI_REASONING_EFFORT-low}
   SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@library.local}
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
   SEED_STAFF_PASSWORD: ${SEED_STAFF_PASSWORD}
 
 services:
   postgres:
+    profiles: ["local-services"]
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
@@ -44,6 +57,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/create-test-db.sh:/docker-entrypoint-initdb.d/10-create-test-db.sh:ro
+    # Host port 5433 (5432 is often taken by a local Postgres); containers still use postgres:5432.
     # Bound to localhost only, handy for psql / a DB GUI.
     ports:
       - "127.0.0.1:5433:5432"
@@ -54,6 +68,7 @@ services:
       retries: 20
 
   minio:
+    profiles: ["local-services"]
     # MinIO stopped publishing images (Docker Hub repo deleted, quay.io gated, Sept 2026).
     # pgsty/silo is a maintained, drop-in community build of the same server: same
     # command, same MINIO_ROOT_* variables, versioned tags, amd64 + arm64.
@@ -61,11 +76,11 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-${S3_ACCESS_KEY}}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-${S3_SECRET_KEY}}
     volumes:
       - miniodata:/data
-    # MinIO web console (browse the uploaded covers) — localhost only.
+    # Web console (browse the uploaded covers) — localhost only.
     ports:
       - "127.0.0.1:9001:9001"
 
@@ -76,11 +91,14 @@ services:
       target: runtime
     restart: unless-stopped
     environment: *api-env
+    # Only waited for when the local-services profile is active.
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       minio:
         condition: service_started
+        required: false
     # Not published to the host: only reachable through Caddy over HTTPS.
     expose:
       - "3000"
@@ -90,6 +108,11 @@ services:
       context: .
       dockerfile: docker/caddy/Dockerfile
     restart: unless-stopped
+    environment:
+      # localhost (default) uses Caddy's local CA; a real domain gets a Let's Encrypt certificate.
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      # "internal" = local CA. For a real domain set it to your email address (ACME account).
+      CADDY_TLS: ${CADDY_TLS:-internal}
     ports:
       - "80:80"
       - "443:443"
@@ -108,10 +131,19 @@ services:
     environment:
       <<: *api-env
       NODE_ENV: test
+      # Tests always run against the throwaway local services, never managed/production data.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/library_test
+      DATABASE_SSL: "false"
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-${S3_ACCESS_KEY}}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-${S3_SECRET_KEY}}
+      S3_FORCE_PATH_STYLE: "true"
       S3_BUCKET: library-covers-test
       COOKIE_SECURE: "false"
       PUBLIC_URL: http://localhost
+      AI_API_KEY: "" # the help-chat tests use a local stub, never a real provider
+      SESSION_SECRET: ""     # tests generate random secrets
+      CSRF_SECRET: ""
     depends_on:
       postgres:
         condition: service_healthy

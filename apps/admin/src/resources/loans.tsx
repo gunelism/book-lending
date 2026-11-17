@@ -32,6 +32,7 @@ import { useState } from 'react';
 import { euros, LOAN_STATUSES, MoneyField, StatusField, useBulkNotify } from '../components/common';
 import { LoanActions } from '../components/LoanActions';
 import type { LibraryDataProvider } from '../dataProvider';
+import { useFieldHelp } from '../formHelp';
 
 const loanFilters = [
   <SearchInput key="q" source="q" alwaysOn placeholder="Member, card, title or barcode" />,
@@ -148,21 +149,24 @@ const MemberStanding = () => {
   );
 };
 
-export const LoanCreate = () => (
+export const LoanCreate = () => {
+  const help = useFieldHelp('checkout');
+  return (
   <Create title="New loan (checkout)" redirect="show">
     <SimpleForm>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Choose a member, then either a book (any available copy is picked) or scan a specific copy's barcode.
       </Typography>
       <ReferenceInput source="memberId" reference="members" filter={{ isActive: true }}>
-        <AutocompleteInput label="Member" filterToQuery={(q: string) => ({ q })} isRequired fullWidth />
+        <AutocompleteInput label="Member" filterToQuery={(q: string) => ({ q })} isRequired fullWidth helperText={help('memberId')} />
       </ReferenceInput>
       <MemberStanding />
       <ReferenceInput source="bookId" reference="books" filter={{ available: true }}>
-        <AutocompleteInput label="Book (available copies only)" filterToQuery={(q: string) => ({ q })} fullWidth />
+        <AutocompleteInput label="Book (available copies only)" filterToQuery={(q: string) => ({ q })} fullWidth helperText={help('bookId')} />
       </ReferenceInput>
-      <TextInput source="barcode" label="…or copy barcode" helperText="e.g. LIB000000042" />
-      <DateTimeInput source="dueDate" label="Due date (optional)" helperText="Default: 14 days from now. Max 60 days." />
+      <TextInput source="barcode" label="…or copy barcode" helperText={help('barcode')} fullWidth />
+      <DateTimeInput source="dueDate" label="Due date (optional)" helperText={help('dueDate')} />
     </SimpleForm>
   </Create>
-);
+  );
+};

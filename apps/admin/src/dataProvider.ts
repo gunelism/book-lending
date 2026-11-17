@@ -122,6 +122,14 @@ export interface LibraryDataProvider extends DataProvider {
   addCopies(bookId: Identifier, count: number, condition: string): Promise<RaRecord[]>;
   uploadCover(bookId: Identifier, file: File): Promise<{ coverUrl: string }>;
   removeCover(bookId: Identifier): Promise<void>;
+  helpChatStatus(): Promise<{ enabled: boolean; model: string }>;
+  askHelp(form: FormName | undefined, question: string, history: ChatTurn[]): Promise<{ answer: string }>;
+}
+
+export type FormName = 'book' | 'author' | 'member' | 'checkout' | 'copy' | 'user';
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface BulkResult {
@@ -214,4 +222,13 @@ export const dataProvider: LibraryDataProvider = {
   async removeCover(bookId) {
     await api(`/api/books/${bookId}/cover`, { method: 'DELETE' });
   },
+
+  async helpChatStatus() {
+    return (await gql('{ helpChatStatus { enabled model } }')).helpChatStatus;
+  },
+
+  askHelp: (form, question, history) =>
+    run('askHelp(input: $input)', '$input: AskHelpInput!', {
+      input: { form, question, history: history.map((t) => ({ role: t.role.toUpperCase(), content: t.content })) },
+    }, 'answer'),
 };

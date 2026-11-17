@@ -20,37 +20,37 @@ import { Member } from '../entities';
 @InputType()
 export class CreateMemberInput {
   /** Generated automatically when omitted. */
-  @Field({ nullable: true })
+  @Field({ description: "Library card number: the letter M followed by 7 digits (e.g. M0001234). Leave empty to generate one automatically. It cannot be changed afterwards.", nullable: true })
   @Clean()
   @IsOptional()
   @Matches(/^M\d{7}$/, { message: 'cardNumber must look like M1234567' })
   cardNumber?: string;
 
-  @Field()
+  @Field({ description: "Member's given name." })
   @Clean()
   @IsString()
   @Length(1, 100)
   firstName: string;
 
-  @Field()
+  @Field({ description: "Member's family name. The member list is sorted by it." })
   @Clean()
   @IsString()
   @Length(1, 100)
   lastName: string;
 
-  @Field()
+  @Field({ description: "Contact email. Must be unique across members; stored in lower case." })
   @CleanLower()
   @IsEmail({}, { message: 'email must be a valid email address' })
   @MaxLength(254)
   email: string;
 
-  @Field({ nullable: true })
+  @Field({ description: "Optional contact number. Digits, spaces and + ( ) . - only.", nullable: true })
   @Clean()
   @IsOptional()
   @Matches(/^\+?[\d\s().-]{6,32}$/, { message: 'phone may only contain digits, spaces and + ( ) . -' })
   phone?: string;
 
-  @Field({ nullable: true })
+  @Field({ description: "Inactive members keep their history but cannot borrow. Deactivate members who have loan history instead of deleting them.", nullable: true })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

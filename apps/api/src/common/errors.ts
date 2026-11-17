@@ -20,6 +20,13 @@ export class NotFoundError extends HttpException {
   }
 }
 
+/** A dependency (e.g. the AI provider or object storage) is down; the rest of the app keeps working. */
+export class ServiceUnavailableError extends HttpException {
+  constructor(code: string, message: string, status = HttpStatus.SERVICE_UNAVAILABLE) {
+    super({ code, message }, status);
+  }
+}
+
 const STATUS_TO_CODE: Record<number, string> = {
   400: 'BAD_USER_INPUT',
   401: 'UNAUTHENTICATED',
@@ -29,6 +36,7 @@ const STATUS_TO_CODE: Record<number, string> = {
   413: 'PAYLOAD_TOO_LARGE',
   422: 'BUSINESS_RULE_VIOLATION',
   429: 'TOO_MANY_REQUESTS',
+  503: 'SERVICE_UNAVAILABLE',
 };
 
 /** Postgres error codes we translate into friendly messages. */

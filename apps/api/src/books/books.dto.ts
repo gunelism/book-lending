@@ -22,44 +22,44 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 @InputType()
 export class CreateBookInput {
-  @Field()
+  @Field({ description: "The title as printed on the cover, including any subtitle after a colon." })
   @Clean()
   @IsString()
   @Length(1, 300)
   title: string;
 
   /** ISBN-10 or ISBN-13, digits with optional hyphens. Checksum verified in the service. */
-  @Field()
+  @Field({ description: "The edition's ISBN, from the back cover or copyright page. ISBN-13 (e.g. 978-0-306-40615-7) or ISBN-10; hyphens and spaces are optional. The check digit is verified, so a mistyped ISBN is rejected. Must be unique: one catalogue entry per edition." })
   @Clean()
   @Matches(/^(97[89][- ]?)?\d{1,5}[- ]?\d{1,7}[- ]?\d{1,7}[- ]?[\dX]$/, { message: 'isbn must be a valid ISBN-10 or ISBN-13' })
   isbn: string;
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Int, { description: "Year this edition was published, from the copyright page. Optional.", nullable: true })
   @IsOptional()
   @IsInt()
   @Min(1450)
   @Max(CURRENT_YEAR + 1)
   publishedYear?: number;
 
-  @Field(() => Genre)
+  @Field(() => Genre, { description: "Main shelf category, used to filter the catalogue. Pick the closest one." })
   @IsEnum(Genre)
   genre: Genre;
 
-  @Field({ nullable: true })
+  @Field({ description: "Short blurb for staff. Optional plain text.", nullable: true })
   @Clean()
   @IsOptional()
   @IsString()
   @MaxLength(5000)
   description?: string;
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Int, { description: "What a member is charged if they lose a copy. Stored in euro cents; the admin form takes euros (enter 25 for EUR 25.00). Defaults to EUR 25.00.", nullable: true })
   @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100_000)
   replacementCostCents?: number;
 
-  @Field(() => Int)
+  @Field(() => Int, { description: "The book's author. Pick an existing author; if they are missing, create them first under Authors." })
   @IsInt()
   @Min(1)
   authorId: number;

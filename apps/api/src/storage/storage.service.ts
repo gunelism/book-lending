@@ -8,9 +8,10 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'node:stream';
+import { ServiceUnavailableError } from '../common/errors';
 import { Env } from '../config/env';
 
 export interface StoredObject {
@@ -23,6 +24,10 @@ export interface StoredObject {
 /**
  * Thin wrapper around any S3-compatible object store (MinIO locally, AWS S3 /
  * Cloudflare R2 in production). Files never touch the container's disk.
+ *
+ * Outages are handled gracefully: the API still starts if storage is down,
+ * cover requests fail with a clear 503 (STORAGE_UNAVAILABLE) instead of a
+ * crash or a generic 500, and /api/health reports storage as "down".
  */
 @Injectable()
 export class StorageService implements OnModuleInit {
@@ -36,6 +41,9 @@ export class StorageService implements OnModuleInit {
       endpoint: config.get('S3_ENDPOINT', { infer: true }),
       region: config.get('S3_REGION', { infer: true }),
       forcePathStyle: config.get('S3_FORCE_PATH_STYLE', { infer: true }),
+      // Fail fast when storage is unreachable instead of hanging requests.
+      maxAttempts: 2,
+      requestHandler: { connectionTimeout: 3_000, requestTimeout: 15_000 },
       credentials: {
         accessKeyId: config.get('S3_ACCESS_KEY', { infer: true }),
         secretAccessKey: config.get('S3_SECRET_KEY', { infer: true }),
@@ -43,8 +51,14 @@ export class StorageService implements OnModuleInit {
     });
   }
 
-  async onModuleInit() {
-    await this.ensureBucket();
+  /** Checked in the background so an unreachable store never blocks or crashes startup. */
+  onModuleInit() {
+    this.ensureBucket().catch((err) =>
+      this.logger.error(
+        `Object storage is unreachable or misconfigured (${err?.name ?? err}). The API keeps running; ` +
+          `cover uploads/images return 503 until S3_ENDPOINT / credentials / bucket "${this.bucket}" are fixed.`,
+      ),
+    );
   }
 
   /** Creates the (private) bucket if missing. Retries while MinIO is starting up. */
@@ -67,14 +81,26 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** True if the bucket answers. Used by the health check. */
+  async isHealthy(): Promise<boolean> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async put(key: string, body: Buffer, contentType: string): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'private, max-age=31536000, immutable' }),
+    await this.guard('upload', () =>
+      this.client.send(
+        new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'private, max-age=31536000, immutable' }),
+      ),
     );
   }
 
   async get(key: string): Promise<StoredObject> {
-    const out = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const out = await this.guard('read', () => this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key })));
     return {
       body: out.Body as Readable,
       contentType: out.ContentType,
@@ -84,7 +110,20 @@ export class StorageService implements OnModuleInit {
   }
 
   async delete(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    await this.guard('delete', () => this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key })));
+  }
+
+  /** Maps storage failures to a clear 404 / 503; details go to the log, not the client. */
+  private async guard<T>(action: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err: any) {
+      if (err?.name === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404) {
+        throw new NotFoundException('The image was not found in storage.');
+      }
+      this.logger.error(`Object storage ${action} failed: ${err?.name ?? 'Error'}: ${err?.message ?? err}`);
+      throw new ServiceUnavailableError('STORAGE_UNAVAILABLE', 'Image storage is unavailable right now. Please try again shortly.');
+    }
   }
 
   /** Removes every object under a prefix (used by the seed reset). */

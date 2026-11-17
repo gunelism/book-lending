@@ -1,6 +1,6 @@
 # 📚 Book Lending Library
 
-A library back office: a **NestJS + GraphQL** API with real lending rules, a **React-Admin** panel with role-based screens, **PostgreSQL**, and **S3-compatible object storage** for book covers. Everything runs in Docker over HTTPS.
+A library back office: a **NestJS + GraphQL** API with real lending rules, a **React-Admin** panel with role-based screens, a **form Help chat** grounded in the forms' own field definitions, **PostgreSQL**, and **S3-compatible object storage** for book covers. Everything runs in Docker over HTTPS, against managed services (Neon + Cloudflare R2) or local stand-ins.
 
 ```
                          https://localhost
@@ -16,9 +16,10 @@ A library back office: a **NestJS + GraphQL** API with real lending rules, a **R
                      │ roles · validation  │  business rules in services
                      └─────┬──────────┬────┘
                            │          │
-                ┌──────────▼───┐  ┌───▼──────────┐
-                │ postgres 17  │  │ minio (S3)   │  cover images
-                └──────────────┘  └──────────────┘
+                ┌──────────▼───┐  ┌───▼──────────┐       ┌─────────────────┐
+                │ PostgreSQL   │  │ S3 storage   │       │ LLM, OpenAI-API │
+                │ Neon / local │  │ R2 / local   │       │ Groq free tier  │
+                └──────────────┘  └──────────────┘       └─────────────────┘
 ```
 
 ## Quick start
@@ -27,6 +28,10 @@ A library back office: a **NestJS + GraphQL** API with real lending rules, a **R
 cp .env.example .env          # then replace every "change-me" value
 docker compose up --build     # first start migrates the DB and seeds demo data (~1 min)
 ```
+
+`.env.example` starts with `COMPOSE_PROFILES=local-services`, which runs Postgres and S3 storage as local containers. To use managed services instead (and to deploy), see **[DEPLOYMENT.md](DEPLOYMENT.md)**. If your `.env` predates this setting, add that line to keep the local containers.
+
+To enable the **Help chat** (bottom-right on every page), get a free Groq API key at console.groq.com/keys (no credit card) and set `AI_API_KEY` in `.env`. Without a key everything else works and the chat says it is turned off. See [Help chat](#help-chat-how-do-i-fill-this-out).
 
 Open **https://localhost**. Caddy uses its own local certificate authority, so the browser warns about the certificate the first time. Either accept the warning, or trust Caddy's root certificate once (macOS):
 
@@ -48,8 +53,9 @@ Other local endpoints: the object-storage console is at http://localhost:9001 (l
 ```bash
 docker compose exec api npm run seed       # wipe all data + covers and seed again
 docker compose exec api npm run db:reset   # drop the schema, re-run migrations, seed
-docker compose --profile test run --rm api-test   # unit + e2e tests (separate library_test DB)
-docker compose logs -f api
+docker compose --profile local-services --profile test run --rm api-test   # unit + e2e tests (throwaway library_test DB)
+docker compose logs -f api                  # startup log shows which DB / storage / AI model is in use
+curl -k https://localhost/api/health        # {"status":"ok","database":"up","storage":"up","helpChat":"enabled"}
 docker compose down -v                      # stop and delete all data volumes
 ```
 
@@ -66,6 +72,28 @@ The seed uses a fixed Faker seed, so it produces the same data every run. Dates 
 | Loans (2 years of history) | ~62,000 |
 
 The loans break down as ~2,300 active, ~400 overdue and ~250 lost, plus late returns with paid and unpaid fines. Generated covers for about 92% of the books are uploaded to object storage.
+
+## Decisions & trade-offs
+
+| Decision | Chosen | Why, and what I gave up |
+|---|---|---|
+| API style | **GraphQL** (NestJS code-first) + one REST endpoint for uploads | One typed schema that the admin consumes and that is self-documenting (`apps/api/schema.gql`). Uploads are plain multipart REST, because GraphQL multipart uploads need extra CSRF plumbing. |
+| Admin | **React-Admin** over the GraphQL API | NestJS has no built-in admin. React-Admin is an admin *framework*: lists, filters, forms, inline references, bulk actions and permissions are its building blocks, and this project configures them. **AdminJS** (the closest thing to a generated admin) was rejected because it writes straight to the database, so the lending rules, locks and role checks would be bypassed or duplicated. The trade-off is more code per screen than a fully generated admin. |
+| ORM | **TypeORM** with decorators and migrations | NestJS's documented integration. Prisma was the first plan, but its engine binaries couldn't be downloaded in the build environment, so I couldn't have tested it. |
+| Framework version | **NestJS 11** | NestJS 12 is ESM-only, which makes Jest setup fragile. 11 is the current CommonJS line. |
+| Auth | **Server-side sessions** in Postgres, not JWT | Sessions can be revoked instantly (deactivation, role change, password reset), and the cookie is HttpOnly so no token is readable by JS. The cost is CSRF protection, done with double-submit tokens. |
+| Data model | **BookCopy** between Book and Loan | A library lends physical copies, not titles. This gives real availability counts and the inline copy editor. |
+| Overdue | **Computed, never stored** | No cron job and no stale flags. It's still filterable in SQL (`status = ACTIVE AND dueDate < now()`). |
+| Help chat | **One completion per question, grounded in the form definitions, any OpenAI-compatible provider** | The brief asks for "what does this field mean / how do I fill this out" grounded in the forms' help text. Field help lives once, as `description`s on the GraphQL input types (NestJS's equivalent of Django's `help_text`). The forms display it, and the chat is given it together with the real validation rules, so the two can't disagree. Calls go through plain `fetch` to the OpenAI-compatible Chat Completions API, so the provider is configuration: Groq's free tier by default (zero cost), or Gemini, OpenRouter or a self-hosted Ollama. No SDK, agents, tools or vector store. |
+| Storage image | `pgsty/silo` for local S3 | MinIO stopped publishing images in 2026; silo is a drop-in build. The API only knows "an S3 endpoint", so R2/S3 need no code change. |
+| Scope | Small, deep domain | No reservations, notifications or member self-service. I spent the time on correct rules, concurrency, security and tests instead. |
+
+**Trade-offs made under time pressure (what I'd do next):**
+* **Rate limits** (login, AI questions) are in memory, so they're per instance. Running several API instances would need Redis.
+* **Cover images** are proxied through the API with a session check. At scale I'd serve signed URLs from a CDN.
+* **The help chat** doesn't stream answers and keeps history only in the open panel. Free-tier rate limits apply (it shows a friendly "busy" message when hit).
+* **Tests** cover business rules, security and the AI integration end to end, but there are no frontend component tests.
+* **Overdue reminders** (email) and **reservations / holds** are the obvious next features.
 
 ## Domain model
 
@@ -160,6 +188,21 @@ React-Admin talks to the GraphQL API through a small custom data provider (`apps
   * **Activate / Deactivate** (members).
 * **Checkout form:** pick a member and a book (or scan a barcode). It checks eligibility live, using the same rules as the API.
 
+## Help chat ("how do I fill this out?")
+
+A **Help** button at the bottom right of every admin page opens a small chat that answers questions like *"What does Replacement cost mean?"*, *"What ISBN format is accepted?"* or *"How do I fill in the New loan form?"*.
+
+* **Grounded in the real field definitions.** Each form field's help text is written once, as the `description` of the GraphQL input type field (e.g. `CreateBookInput.isbn`); this is the equivalent of Django's `help_text`. `FormsService` builds the form definitions from the live GraphQL schema (types, required, enum options, descriptions) and from the `class-validator` rules on the same DTOs (e.g. *1–300 characters*, *minimum 1450*). The same definitions serve two purposes:
+  * the admin forms show them as the helper text under each input (`forms` query), and
+  * the chat receives them in its system prompt: the current form in full, the other forms in brief.
+
+  The model is told to answer only from them, using the labels the user sees.
+* **Knows where you are.** The panel detects the form from the page (Book, Author, Member, New loan, Copies, Staff) and starts a fresh conversation when you move to another form.
+* **Any model source, zero cost.** It uses the OpenAI-compatible Chat Completions API through plain `fetch`, so switching provider is only `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY`. The default is Groq's free tier with `openai/gpt-oss-20b`. Gemini's free tier and a self-hosted Ollama are documented in `.env.example`.
+* **Failure handling.** With no key, the panel says the chat is turned off. On a timeout (20 s), provider error, free-tier limit (`429`), rejected key or retired model, the user gets a clear message (`ASSISTANT_UNAVAILABLE`, `ASSISTANT_BUSY`, `ASSISTANT_MISCONFIGURED`) and the admin keeps working. Provider details go to the server log only.
+* **Security.** The key is read from the environment on the server and never sent to the browser. Questions are validated (max 500 characters, sanitised) and rate-limited to 10 per minute per user. Answers are rendered as plain text.
+* **Small on purpose.** About 250 lines across `apps/api/src/forms/` and `apps/api/src/help-chat/`, plus `apps/admin/src/components/HelpChat.tsx`.
+
 ## Security checklist
 
 | Requirement | Implementation |
@@ -169,8 +212,10 @@ React-Admin talks to the GraphQL API through a small custom data provider (`apps
 | CSRF | Double-submit token (`csrf-csrf`) bound to the session, required in `X-CSRF-Token` on **every** non-GET request (GraphQL, uploads, login, logout). Also Apollo's `csrfPrevention`, and `SameSite` cookies. GitHub OAuth uses a `state` parameter compared in constant time. |
 | Input validation | Global `ValidationPipe` with `whitelist` and `forbidNonWhitelisted` (unknown fields are rejected). Every input has `class-validator` rules, and text is trimmed with control characters stripped. Sorting is limited to real entity columns, read from TypeORM metadata; hidden columns are excluded. Lists are capped at 500 per page. GraphQL query depth is limited to 6. JSON bodies are capped at 200 KB. |
 | Uploads | Limited to 2 MB with exactly one file (multer limits), held **in memory only**. The type is checked from the **actual bytes** via `sharp`, not the extension or Content-Type. Decompression bombs are rejected (pixel limit). The image is **re-encoded to WebP**, which strips metadata and any embedded payload. Files are stored in S3 under random keys and served with `nosniff` and `CSP: default-src 'none'`. Admin only. |
-| Secrets | Only `.env.example` is committed; `.env` is git-ignored. The app refuses to start if a secret is missing or shorter than 32 characters. |
-| HTTPS | Caddy terminates TLS with a local CA, redirects HTTP to HTTPS, and sends HSTS. The API container isn't published to the host. |
+| Secrets | Only `.env.example` is committed; `.env` is git-ignored. The app refuses to start if a secret is missing or shorter than 32 characters. The AI provider key stays on the server. Tests generate random secrets per run, so none are hardcoded. |
+| HTTPS | Caddy terminates TLS (local CA on `localhost`, automatic Let's Encrypt on a real domain), redirects HTTP to HTTPS, and sends HSTS. The API container isn't published to the host. |
+| Authorization failures | API: `FORBIDDEN` with a message naming the required role. Admin: hidden menus and buttons, read-only pages, and an "Access denied" page if a librarian opens a Staff URL directly. |
+| Outages | If storage is down, the API still starts, covers return `503 STORAGE_UNAVAILABLE`, and `/api/health` reports `degraded`. If the AI provider is down or rate-limited, the Help chat shows a friendly message and nothing else is affected. |
 | Headers and other hardening | Helmet on the API; CSP, `X-Frame-Options` and `nosniff` from Caddy for the SPA. Login is rate-limited to 5 per minute per IP. Production hides introspection and GraphiQL and masks internal errors. The API container runs as a non-root user. |
 
 ## GitHub sign-in (optional)
@@ -184,7 +229,7 @@ React-Admin talks to the GraphQL API through a small custom data provider (`apps
 ## Tests
 
 ```bash
-docker compose --profile test run --rm api-test
+docker compose --profile local-services --profile test run --rm api-test
 ```
 
 **Unit tests** (`loan-policy.spec.ts`) cover:
@@ -212,13 +257,20 @@ docker compose --profile test run --rm api-test
 * only an admin can delete a book or list staff accounts
 * a fake image and a file over 2 MB are rejected
 * a real image is re-encoded to WebP in S3, librarians can't upload, and covers need a session
+* sorting only works on real entity columns (never hidden ones like `passwordHash`)
 
-## Production notes
+`help-chat.e2e-spec.ts` runs against a local stub of an OpenAI-compatible provider (no key or network needed) and checks that:
+* the `forms` query returns the book form's fields in form order, with their help text, rules and options
+* the prompt contains the current form's field help and validation rules, and the key is sent only to the provider
+* follow-up questions send the earlier turns
+* provider HTTP 500 / 429 / 401 become friendly `ASSISTANT_UNAVAILABLE` / `ASSISTANT_BUSY` / `ASSISTANT_MISCONFIGURED` errors without leaking details, and the rest of the API keeps working
 
-* **Database:** point `DATABASE_URL` at a managed Postgres (Neon, Supabase, RDS…) and set `DATABASE_SSL=true`. There is no embedded database. Migrations run on container start; the seed only runs if the database is empty.
-* **Object storage:** set `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_BUCKET` for AWS S3 or Cloudflare R2. Set `S3_FORCE_PATH_STYLE=false` for AWS.
-* **Object-storage image:** MinIO no longer publishes Docker images, so the `minio` service runs `pgsty/silo`, a maintained drop-in build of the same server. Any S3-compatible service works, because the API only needs the `S3_*` settings.
-* **HTTPS:** for a public domain, replace `localhost` in `docker/caddy/Caddyfile` with the domain and remove `local_certs`. Caddy then gets a Let's Encrypt certificate automatically.
+## Managed services & deployment
+
+* **Where the data lives is decided only by `.env`.** `DATABASE_URL` (+ `DATABASE_SSL=true`) can point at a managed Postgres such as Neon or Supabase, and `S3_*` at Cloudflare R2 or AWS S3. The local containers start only when `COMPOSE_PROFILES=local-services` is set.
+* **No silent fallback.** On startup the API logs the database host, the storage host and the AI model, each labelled *managed* or *LOCAL container*. It also warns if a production run is using the local stand-ins.
+* **Startup behaviour.** Migrations run on container start; demo data is seeded only into an empty database.
+* **Deploying:** step-by-step guide in **[DEPLOYMENT.md](DEPLOYMENT.md)** (VPS + Docker Compose + Neon + R2 + automatic HTTPS).
 
 ## Project layout
 
@@ -229,6 +281,8 @@ apps/api/                 NestJS API
   src/loans/              loan-policy.ts (rules) · loans.service.ts (transactions) · resolver
   src/books/              books + covers (upload pipeline, REST controller)
   src/auth/               sessions, CSRF, guards, argon2, GitHub OAuth
+  src/forms/              form definitions (field help = input-type descriptions + validator rules)
+  src/help-chat/          help chat: prompt from form definitions, OpenAI-compatible client, errors
   src/seed/               demo data generator (+ generated cover art)
   test/                   e2e tests
 apps/admin/               React-Admin SPA (Vite)

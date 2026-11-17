@@ -12,8 +12,10 @@ import { depthLimit } from './common/depth-limit';
 import { formatGraphQLError } from './common/errors';
 import { Env, validateEnv } from './config/env';
 import { CopiesModule } from './copies/copies.module';
+import { FormsModule } from './forms/forms.module';
 import { buildDataSourceOptions } from './database/data-source';
 import { HealthController } from './health/health.controller';
+import { HelpChatModule } from './help-chat/help-chat.module';
 import { LoadersModule } from './loaders/loaders.module';
 import { LoadersService } from './loaders/loaders.service';
 import { LoansModule } from './loans/loans.module';
@@ -71,6 +73,8 @@ import { UsersModule } from './users/users.module';
     CopiesModule,
     MembersModule,
     LoansModule,
+    FormsModule,
+    HelpChatModule,
   ],
   controllers: [HealthController],
 })

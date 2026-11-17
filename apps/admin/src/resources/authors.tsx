@@ -25,6 +25,7 @@ import {
   Labeled,
 } from 'react-admin';
 import { CoverThumb, GENRES, ReadOnlyBadge, useIsAdmin } from '../components/common';
+import { useFieldHelp } from '../formHelp';
 
 export const NATIONALITIES = [
   'Estonian', 'Azerbaijani', 'British', 'American', 'French', 'German', 'Japanese', 'Italian', 'Spanish', 'Polish',
@@ -74,15 +75,19 @@ const AuthorBooks = () => {
   );
 };
 
-const authorFields = (
-  <>
-    <TextInput source="firstName" validate={required()} />
-    <TextInput source="lastName" validate={required()} />
-    <SelectInput source="nationality" choices={NATIONALITIES} />
-    <NumberInput source="birthYear" />
-    <TextInput source="bio" multiline fullWidth minRows={3} />
-  </>
-);
+/** Helper texts come from the API's field definitions — the same ones the Help chat answers from. */
+const AuthorFields = () => {
+  const help = useFieldHelp('author');
+  return (
+    <>
+      <TextInput source="firstName" validate={required()} helperText={help('firstName')} />
+      <TextInput source="lastName" validate={required()} helperText={help('lastName')} />
+      <SelectInput source="nationality" choices={NATIONALITIES} helperText={help('nationality')} />
+      <NumberInput source="birthYear" helperText={help('birthYear')} />
+      <TextInput source="bio" multiline fullWidth minRows={3} helperText={help('bio')} />
+    </>
+  );
+};
 
 const AuthorEditToolbar = () => (
   <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -94,7 +99,7 @@ const AuthorEditToolbar = () => (
 export const AuthorEdit = () => (
   <Edit mutationMode="pessimistic">
     <SimpleForm toolbar={<AuthorEditToolbar />}>
-      {authorFields}
+      <AuthorFields />
       <AuthorBooks />
     </SimpleForm>
   </Edit>
@@ -102,7 +107,7 @@ export const AuthorEdit = () => (
 
 export const AuthorCreate = () => (
   <Create redirect="edit">
-    <SimpleForm>{authorFields}</SimpleForm>
+    <SimpleForm><AuthorFields /></SimpleForm>
   </Create>
 );
 

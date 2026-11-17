@@ -76,6 +76,30 @@ export class Env {
   @IsOptional()
   @IsString()
   GITHUB_CLIENT_SECRET?: string;
+
+  /**
+   * Help chat: any OpenAI-compatible Chat Completions endpoint. Defaults to
+   * Groq's free tier; Gemini, OpenRouter or a self-hosted Ollama work by
+   * changing AI_BASE_URL + AI_MODEL. Without a key the chat shows as disabled.
+   */
+  @IsOptional()
+  @IsString()
+  AI_API_KEY?: string;
+
+  @IsUrl({ require_tld: false, require_protocol: true })
+  AI_BASE_URL = 'https://api.groq.com/openai/v1';
+
+  @IsString()
+  AI_MODEL = 'openai/gpt-oss-20b';
+
+  /** Sent as `reasoning_effort` when set (reasoning models such as gpt-oss); empty = not sent. */
+  @IsOptional()
+  @IsIn(['', 'low', 'medium', 'high'])
+  AI_REASONING_EFFORT = 'low';
+
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  AI_TIMEOUT_MS = 20_000;
 }
 
 export function validateEnv(raw: Record<string, unknown>): Env {

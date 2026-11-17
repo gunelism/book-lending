@@ -4,8 +4,11 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { configureApp } from './bootstrap';
+import { validateEnv } from './config/env';
+import { reportServices } from './config/services-report';
 
 async function bootstrap() {
+  reportServices(validateEnv(process.env));
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   configureApp(app);
   const port = Number(process.env.PORT ?? 3000);

@@ -21,30 +21,30 @@ import { Loan, LoanDisplayStatus } from '../entities';
 /** Lend a copy. Identify the copy by exactly one of copyId, barcode or bookId (any available copy). */
 @InputType()
 export class CheckoutInput {
-  @Field(() => Int)
+  @Field(() => Int, { description: "Who is borrowing. Only active members in good standing can borrow; the New loan form shows live whether the chosen member is allowed, and why not." })
   @IsInt()
   @Min(1)
   memberId: number;
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Int, { description: "A specific physical copy by internal id (for integrations; the admin form uses Book or Barcode instead).", nullable: true })
   @IsOptional()
   @IsInt()
   @Min(1)
   copyId?: number;
 
-  @Field({ nullable: true })
+  @Field({ description: "Scan or type the barcode sticker on the copy (e.g. LIB000000042) to lend that exact copy. Fill in Barcode OR Book, not both.", nullable: true })
   @Clean()
   @IsOptional()
   @Matches(/^[A-Z0-9-]{4,32}$/, { message: 'barcode has an invalid format' })
   barcode?: string;
 
-  @Field(() => Int, { nullable: true, description: 'Lend any available copy of this book' })
+  @Field(() => Int, { description: "Lend any available copy of this book; the copy in the best condition is picked automatically. Fill in Book OR Barcode, not both. Only books with a copy on the shelf are listed.", nullable: true })
   @IsOptional()
   @IsInt()
   @Min(1)
   bookId?: number;
 
-  @Field({ nullable: true, description: `Defaults to today + the standard loan period` })
+  @Field({ description: "Optional. Leave empty for the standard 14-day loan. If you set it, it must be in the future and at most 60 days away.", nullable: true })
   @IsOptional()
   @Type(() => Date)
   @IsDate()
