@@ -24,7 +24,13 @@ export async function api(path: string, init: RequestInit = {}, retry = true): P
   if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', csrfToken ?? (await fetchCsrfToken()));
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
 
-  const res = await fetch(path, { ...init, method, headers, credentials: 'same-origin' });
+  let res: Response;
+  try {
+    res = await fetch(path, { ...init, method, headers, credentials: 'same-origin' });
+  } catch {
+    // Network down, server unreachable, request blocked by an extension…
+    throw new HttpError("Can't reach the server. Check your connection and try again.", 0);
+  }
   const text = await res.text();
   const body = text ? safeJson(text) : null;
 
@@ -33,18 +39,27 @@ export async function api(path: string, init: RequestInit = {}, retry = true): P
     return api(path, init, false);
   }
   if (!res.ok) {
-    const message = Array.isArray(body?.message) ? body.message.join('; ') : body?.message ?? res.statusText;
-    throw new HttpError(message, res.status, body);
+    throw new HttpError(errorMessage(res.status, body), res.status, body);
   }
   return body;
 }
 
-function safeJson(text: string) {
+function safeJson(text: string): any {
   try {
     return JSON.parse(text);
   } catch {
-    return { message: text };
+    return null; // e.g. the proxy's HTML error page: never shown to the user
   }
+}
+
+/** The API's own message when it sent one (it is written for users); otherwise a plain explanation of the status. */
+function errorMessage(status: number, body: any): string {
+  if (body?.message) return Array.isArray(body.message) ? body.message.join('; ') : String(body.message);
+  if (status === 502 || status === 503 || status === 504) return 'The server is not responding right now. Please try again in a moment.';
+  if (status === 413) return 'The file is too large.';
+  if (status === 429) return 'Too many attempts. Please wait a minute and try again.';
+  if (status >= 500) return 'Something went wrong on our side. Please try again.';
+  return `Request failed (HTTP ${status}).`;
 }
 
 const CODE_TO_STATUS: Record<string, number> = { UNAUTHENTICATED: 401, FORBIDDEN: 403, NOT_FOUND: 404 };

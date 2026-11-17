@@ -54,7 +54,8 @@ Other local endpoints: the object-storage console is at http://localhost:9001 (l
 docker compose exec api npm run seed       # wipe all data + covers and seed again
 docker compose exec api npm run db:reset   # drop the schema, re-run migrations, seed
 docker compose --profile local-services --profile test run --rm api-test   # unit + e2e tests (throwaway library_test DB)
-docker compose logs -f api                  # startup log shows which DB / storage / AI model is in use
+docker compose logs -f api                  # one line per request + errors; startup shows DB / storage / AI model
+docker compose logs api | grep 3f9c2a1b7d04 # everything about one request (the id users see as "reference")
 curl -k https://localhost/api/health        # {"status":"ok","database":"up","storage":"up","helpChat":"enabled"}
 docker compose down -v                      # stop and delete all data volumes
 ```
@@ -203,6 +204,44 @@ A **Help** button at the bottom right of every admin page opens a small chat tha
 * **Security.** The key is read from the environment on the server and never sent to the browser. Questions are validated (max 500 characters, sanitised) and rate-limited to 10 per minute per user. Answers are rendered as plain text.
 * **Small on purpose.** About 250 lines across `apps/api/src/forms/` and `apps/api/src/help-chat/`, plus `apps/admin/src/components/HelpChat.tsx`.
 
+## Logging & error handling
+
+Errors are not caught service by service. Services `throw`, and **one central place** decides what each error means, what the user sees and what gets logged (`describeError` in `src/common/errors.ts`). `try/catch` is used only where the code can actually do something about a failure:
+* storage and the AI provider: turned into a clear `503` and the rest of the app keeps working
+* GitHub sign-in: send the user back to the login page with a message
+* cleanup of old covers: logged, but it doesn't fail the request
+* database transactions: rolled back automatically
+
+**Request log.** Every request gets a short random id (returned in the `X-Request-Id` header) and one line when it finishes. GraphQL requests are named by operation, because they are all `POST /graphql`:
+```
+LOG  [HTTP] POST /graphql query books → 200 · 26 ms · user 1 · req 9df4b6c38ffe
+WARN [GraphQL] mutation checkout: NOT_FOUND — Member #999 was not found (req 6fbe179789eb)
+WARN [HTTP] POST /graphql mutation checkout → 200 [NOT_FOUND] · 13 ms · user 1 · req 6fbe179789eb
+WARN [AuthService] Failed sign-in for "admin@library.local": wrong password
+WARN [HTTP] POST /auth/login → 401 [UNAUTHENTICATED] · 57 ms · ip 172.18.0.1 · req ddeb9ed10f6a
+```
+The log level follows the outcome:
+* `log` for a success
+* `warn` for an expected failure: bad input, a business rule, not signed in, CSRF, rate limit, not found
+* `error` for a 5xx or a crash
+
+GraphQL errors arrive with HTTP 200, so their codes are listed in brackets. Health checks are only logged at `LOG_LEVEL=debug`. Request bodies, variables, cookies and passwords are never logged.
+
+**Unexpected errors** (a bug, the database going away…):
+* the server logs them with the stack trace, the operation and the user, under the request id
+* the user gets *"Something went wrong on our side. Please try again. (reference 6fbe179789eb)"*, and no SQL or stack trace reaches the browser
+
+Searching the logs for the reference finds every line of that request. This covers GraphQL (Apollo plugin) and REST, such as login and uploads (global exception filter). Errors outside any request are logged instead of disappearing: unhandled promise rejections are logged, and an uncaught exception is logged and exits so Docker restarts the API.
+
+**What the user sees.** Expected errors keep their specific, user-facing message, for example *"Loan #42 is already returned."* or *"A record with isbn "…" already exists"*. The admin also turns network failures and proxy error pages into plain sentences such as *"Can't reach the server…"*.
+
+**Settings:**
+* `LOG_LEVEL`: `error`, `warn`, `log` (default) or `debug`
+* `LOG_FORMAT`: `pretty` (default) or `json` (one object per line, for log services like Better Stack, Datadog or CloudWatch)
+* Docker rotates the API log at 3 × 10 MB.
+
+Code: `apps/api/src/common/logging/` and `src/common/errors.ts`. Tests: `logging.e2e-spec.ts`.
+
 ## Security checklist
 
 | Requirement | Implementation |
@@ -263,7 +302,13 @@ docker compose --profile local-services --profile test run --rm api-test
 * the `forms` query returns the book form's fields in form order, with their help text, rules and options
 * the prompt contains the current form's field help and validation rules, and the key is sent only to the provider
 * follow-up questions send the earlier turns
-* provider HTTP 500 / 429 / 401 become friendly `ASSISTANT_UNAVAILABLE` / `ASSISTANT_BUSY` / `ASSISTANT_MISCONFIGURED` errors without leaking details, and the rest of the API keeps working
+* provider HTTP 500 / 429 / 401 / 404 become friendly `ASSISTANT_UNAVAILABLE` / `ASSISTANT_BUSY` / `ASSISTANT_MISCONFIGURED` errors without leaking details, and the rest of the API keeps working
+
+`logging.e2e-spec.ts` checks that:
+* every request is logged once, with its GraphQL operation and the id returned in `X-Request-Id`
+* an expected error is logged as a warning with its code, not as a crash
+* an unexpected error (GraphQL or REST) reaches the user only as a generic message with a reference, while the log has the real message and stack under the same id
+* a failed sign-in logs the reason but never the password
 
 ## Managed services & deployment
 
@@ -281,6 +326,7 @@ apps/api/                 NestJS API
   src/loans/              loan-policy.ts (rules) · loans.service.ts (transactions) · resolver
   src/books/              books + covers (upload pipeline, REST controller)
   src/auth/               sessions, CSRF, guards, argon2, GitHub OAuth
+  src/common/             error mapping (errors.ts), logging/ (request log, GraphQL plugin, exception filter)
   src/forms/              form definitions (field help = input-type descriptions + validator rules)
   src/help-chat/          help chat: prompt from form definitions, OpenAI-compatible client, errors
   src/seed/               demo data generator (+ generated cover art)

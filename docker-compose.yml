@@ -41,6 +41,8 @@ x-api-env: &api-env
   AI_BASE_URL: ${AI_BASE_URL:-https://api.groq.com/openai/v1}
   AI_MODEL: ${AI_MODEL:-openai/gpt-oss-20b}
   AI_REASONING_EFFORT: ${AI_REASONING_EFFORT-low}
+  LOG_LEVEL: ${LOG_LEVEL:-log}
+  LOG_FORMAT: ${LOG_FORMAT:-pretty}
   SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@library.local}
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
   SEED_STAFF_PASSWORD: ${SEED_STAFF_PASSWORD}
@@ -91,6 +93,10 @@ services:
       target: runtime
     restart: unless-stopped
     environment: *api-env
+    # Rotate logs so a long-running server can't fill its disk (3 × 10 MB).
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
     # Only waited for when the local-services profile is active.
     depends_on:
       postgres:

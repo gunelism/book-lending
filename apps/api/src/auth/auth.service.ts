@@ -40,8 +40,12 @@ export class AuthService {
     const hash = user?.passwordHash ?? (await dummyPasswordHash());
     const ok = await verifyPassword(hash, password);
     if (!user || !user.passwordHash || !ok || !user.isActive) {
+      // The user always gets the same message; the log says why (useful to spot attacks or locked-out staff).
+      const reason = !user ? 'unknown email' : !user.passwordHash ? 'account has no password (GitHub-only)' : !ok ? 'wrong password' : 'account deactivated';
+      this.logger.warn(`Failed sign-in for "${email.toLowerCase()}": ${reason}`);
       throw new UnauthorizedException('Invalid email or password.');
     }
+    this.logger.log(`User ${user.id} signed in`);
     await this.users.update(user.id, { lastLoginAt: new Date() });
     return user;
   }

@@ -100,7 +100,8 @@ export function configureSecurity(app: INestApplication, env: Env): SecurityHand
   app.use((req: Request, res: Response, next: NextFunction) => {
     doubleCsrfProtection(req, res, (err?: unknown) => {
       if (!err) return next();
-      res.status(403).json({ statusCode: 403, code: 'CSRF_INVALID', message: 'Invalid or missing CSRF token. Reload the page and try again.' });
+      req.log?.errors.push('CSRF_INVALID');
+      res.status(403).json({ statusCode: 403, code: 'CSRF_INVALID', message: 'Invalid or missing CSRF token. Reload the page and try again.', requestId: req.log?.id });
     });
   });
 

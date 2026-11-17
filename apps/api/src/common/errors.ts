@@ -54,30 +54,47 @@ function uniqueMessage(detail?: string): string {
   return m ? `A record with ${m[1]} "${m[2]}" already exists.` : 'A record with these values already exists.';
 }
 
-/**
- * Turns any thrown error into a safe GraphQL error. Unknown errors never leak
- * stack traces or SQL in production.
- */
-export function formatGraphQLError(formatted: GraphQLFormattedError, error: unknown): GraphQLFormattedError {
-  const original: any = (error as any)?.originalError ?? error;
+export interface ErrorInfo {
+  status: number;
+  code: string;
+  message: string;
+  /** true = a normal outcome (bad input, business rule, not signed in…) logged as a warning; false = a bug or outage, logged with its stack. */
+  expected: boolean;
+}
+
+export const INTERNAL_MESSAGE = 'Something went wrong on our side. Please try again.';
+
+/** One place that decides what any thrown error means, for GraphQL, REST and the logs. */
+export function describeError(err: unknown): ErrorInfo {
+  const original: any = (err as any)?.originalError ?? err;
 
   if (original instanceof HttpException) {
     const status = original.getStatus();
     const body: any = original.getResponse();
-    const code = body?.code ?? STATUS_TO_CODE[status] ?? 'BAD_REQUEST';
     let message: string = typeof body === 'string' ? body : body?.message ?? original.message;
     if (Array.isArray(message)) message = message.join('; ');
-    return { message, path: formatted.path, extensions: { code } };
+    // 5xx HttpExceptions are deliberate (e.g. storage or AI provider down): already logged where they happen.
+    return { status, code: body?.code ?? STATUS_TO_CODE[status] ?? 'BAD_REQUEST', message, expected: true };
   }
 
   const db = fromDatabaseError(original);
-  if (db) return { message: db.message, path: formatted.path, extensions: { code: db.code } };
+  if (db) return { status: db.code === 'CONFLICT' ? 409 : 400, code: db.code, message: db.message, expected: true };
 
-  // GraphQL parse/validation errors are safe to show.
-  const code = formatted.extensions?.code as string | undefined;
-  if (code && code !== 'INTERNAL_SERVER_ERROR') return { message: formatted.message, path: formatted.path, extensions: { code } };
+  // GraphQL parse / validation errors (unknown field, wrong variable type…) are the client's mistake and safe to show.
+  const gqlCode = (err as any)?.extensions?.code as string | undefined;
+  if (gqlCode && gqlCode !== 'INTERNAL_SERVER_ERROR' && !(err as any)?.originalError) {
+    return { status: 400, code: gqlCode, message: (err as any).message, expected: true };
+  }
 
-  if (process.env.NODE_ENV !== 'production') return formatted;
-  console.error(original);
-  return { message: 'Internal server error', path: formatted.path, extensions: { code: 'INTERNAL_SERVER_ERROR' } };
+  return { status: 500, code: 'INTERNAL_SERVER_ERROR', message: INTERNAL_MESSAGE, expected: false };
+}
+
+/**
+ * Turns any thrown error into a safe GraphQL error. Unexpected errors never
+ * reach the client: they get a generic message plus a reference (the request
+ * id, added by the logging plugin) that matches the server log entry.
+ */
+export function formatGraphQLError(formatted: GraphQLFormattedError, error: unknown): GraphQLFormattedError {
+  const info = describeError(error);
+  return { message: info.message, path: formatted.path, extensions: { code: info.code } };
 }

@@ -21,6 +21,14 @@ export class Env {
   @IsIn(['development', 'production', 'test'])
   NODE_ENV: 'development' | 'production' | 'test' = 'development';
 
+  /** Minimum log level: error, warn, log (default; one line per request) or debug (adds health checks). */
+  @IsIn(['fatal', 'error', 'warn', 'log', 'debug', 'verbose'])
+  LOG_LEVEL = 'log';
+
+  /** pretty (default, readable in `docker compose logs`) or json (one object per line, for log services). */
+  @IsIn(['pretty', 'json'])
+  LOG_FORMAT = 'pretty';
+
   @Transform(({ value }) => Number(value))
   @IsInt()
   PORT = 3000;

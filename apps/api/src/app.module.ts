@@ -10,6 +10,7 @@ import { AuthorsModule } from './authors/authors.module';
 import { BooksModule } from './books/books.module';
 import { depthLimit } from './common/depth-limit';
 import { formatGraphQLError } from './common/errors';
+import { graphqlLoggingPlugin } from './common/logging/graphql-logging.plugin';
 import { Env, validateEnv } from './config/env';
 import { CopiesModule } from './copies/copies.module';
 import { FormsModule } from './forms/forms.module';
@@ -51,6 +52,7 @@ import { UsersModule } from './users/users.module';
           csrfPrevention: true,
           validationRules: [depthLimit(6)],
           formatError: formatGraphQLError,
+          plugins: [graphqlLoggingPlugin()],
           // Fresh DataLoaders per request: batching without cross-user caching.
           context: ({ req, res }: { req: unknown; res: unknown }) => ({ req, res, loaders: loaders.create() }),
         };

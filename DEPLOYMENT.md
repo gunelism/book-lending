@@ -142,7 +142,9 @@ If it says **LOCAL container**, the `.env` values weren't picked up. Check the v
 | Task | Command |
 |---|---|
 | Deploy a new version | `git pull && docker compose up -d --build` (migrations run automatically) |
-| Logs | `docker compose logs -f api` / `docker compose logs -f caddy` |
+| Logs | `docker compose logs -f api` (one line per request, warnings and errors) / `docker compose logs -f caddy` |
+| Investigate a user's error | They see *"… (reference 6fbe179789eb)"*: `docker compose logs api \| grep 6fbe179789eb` shows the request and the stack trace |
+| Ship logs to a log service | Set `LOG_FORMAT=json` in `.env` and recreate the api container |
 | Regenerate demo data | `docker compose exec api npm run seed` (**wipes all data**) |
 | Health | `curl https://library.example.com/api/health` |
 | Backups | Neon keeps point-in-time history (restore from the Neon console) |
