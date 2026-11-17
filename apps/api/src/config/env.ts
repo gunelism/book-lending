@@ -1,0 +1,89 @@
+import { plainToInstance, Transform } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MinLength,
+  validateSync,
+} from 'class-validator';
+
+const toBool = ({ value }: { value: unknown }) =>
+  value === undefined || value === '' ? undefined : String(value).toLowerCase() === 'true';
+
+/**
+ * Every setting the API reads. Validated once at boot so a missing secret
+ * fails fast instead of surfacing as a confusing runtime error.
+ */
+export class Env {
+  @IsIn(['development', 'production', 'test'])
+  NODE_ENV: 'development' | 'production' | 'test' = 'development';
+
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  PORT = 3000;
+
+  @IsString()
+  DATABASE_URL: string;
+
+  /** Turn on for managed providers (Neon, Supabase, RDS) that require TLS. */
+  @Transform(toBool)
+  @IsBoolean()
+  DATABASE_SSL = false;
+
+  @IsUrl({ require_tld: false, require_protocol: true })
+  S3_ENDPOINT: string;
+
+  @IsString()
+  S3_REGION = 'us-east-1';
+
+  @IsString()
+  S3_ACCESS_KEY: string;
+
+  @IsString()
+  S3_SECRET_KEY: string;
+
+  @IsString()
+  S3_BUCKET: string;
+
+  @Transform(toBool)
+  @IsBoolean()
+  S3_FORCE_PATH_STYLE = true;
+
+  @IsString()
+  @MinLength(32, { message: 'SESSION_SECRET must be at least 32 characters' })
+  SESSION_SECRET: string;
+
+  @IsString()
+  @MinLength(32, { message: 'CSRF_SECRET must be at least 32 characters' })
+  CSRF_SECRET: string;
+
+  /** Secure cookies require HTTPS. Only the automated tests turn this off. */
+  @Transform(toBool)
+  @IsBoolean()
+  COOKIE_SECURE = true;
+
+  /** Public origin of the app, used for OAuth redirects. */
+  @IsUrl({ require_tld: false, require_protocol: true })
+  PUBLIC_URL = 'https://localhost';
+
+  @IsOptional()
+  @IsString()
+  GITHUB_CLIENT_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_CLIENT_SECRET?: string;
+}
+
+export function validateEnv(raw: Record<string, unknown>): Env {
+  const env = plainToInstance(Env, raw, { enableImplicitConversion: false, exposeDefaultValues: true });
+  const errors = validateSync(env, { skipMissingProperties: false, whitelist: false });
+  if (errors.length) {
+    const details = errors.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('\n  - ');
+    throw new Error(`Invalid environment configuration:\n  - ${details}`);
+  }
+  return env;
+}

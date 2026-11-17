@@ -1,0 +1,35 @@
+{
+	# Issue certificates from Caddy's own local CA (no public ACME, no internet
+	# exposure). HTTP on :80 is redirected to HTTPS automatically.
+	local_certs
+	admin off
+}
+
+localhost {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	# API: GraphQL, REST uploads/cover images, and auth endpoints.
+	@backend path /graphql /graphql/* /api/* /auth/*
+	handle @backend {
+		request_body {
+			max_size 3MB
+		}
+		reverse_proxy api:3000
+	}
+
+	# React-Admin single-page app.
+	handle {
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://avatars.githubusercontent.com; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com"
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Secrets — never commit these. Copy .env.example to .env instead.
+.env
+.env.*
+!.env.example
+
+# Local certificates exported from Caddy
+*.crt
+*.pem
+*.key
