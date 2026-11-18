@@ -33,10 +33,16 @@ export class Env {
   @IsInt()
   PORT = 3000;
 
+  /** App traffic. On Neon this is the pooled (-pooler) URL that `neon deploy` / `neon env pull` writes. */
   @IsString()
   DATABASE_URL: string;
 
-  /** Turn on for managed providers (Neon, Supabase, RDS) that require TLS. */
+  /** Direct (non-pooled) URL for migrations and the seed; written by Neon next to DATABASE_URL. Optional elsewhere. */
+  @IsOptional()
+  @IsString()
+  DATABASE_URL_UNPOOLED?: string;
+
+  /** Forces TLS. Not needed when the URL has ?sslmode=require (as Neon's do): that turns TLS on by itself. */
   @Transform(toBool)
   @IsBoolean()
   DATABASE_SSL = false;

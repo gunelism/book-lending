@@ -22,12 +22,23 @@ Expect about 45–60 minutes the first time.
 
 ## 1. Database: Neon
 
-1. Create a project (pick the region closest to your server, e.g. Frankfurt for a server in Germany or Finland).
-2. Create a database named `library`. The default `neondb` also works; just use that name below.
-3. Copy the **connection string**. Use the *direct* (non-pooled) one, because migrations and session locking work best on a direct connection. It looks like:
-   ```
-   postgresql://USER:PASSWORD@ep-xxxx-xxxx.eu-central-1.aws.neon.tech/library?sslmode=require
-   ```
+The repo is already linked to the Neon project: `neon.ts` declares it and `.neon` (git-ignored) points at the project and its `production` branch. On a machine where you're signed in to Neon, run from the project root:
+
+```bash
+npx neon@latest login     # once; opens the browser
+npx neon@latest deploy    # provisions what neon.ts declares, then writes the env vars into .env
+```
+
+`deploy` writes two connection strings into `.env`:
+
+| Variable | Connection | Used by |
+|---|---|---|
+| `DATABASE_URL` | **pooled** (`-pooler` host, PgBouncer) | the API's queries and the session store |
+| `DATABASE_URL_UNPOOLED` | **direct** | migrations, the seed and the TypeORM CLI, which need session state the pooler doesn't keep |
+
+Both end in `?sslmode=require&channel_binding=require`. The app turns that into strict TLS (certificate checked) plus SCRAM channel binding, so `DATABASE_SSL` isn't needed.
+
+On a server without the Neon CLI, copy both lines from your local `.env` (or from the Neon console's *Connect* dialog, pooled and direct) into the server's `.env`.
 
 You don't need to create any tables: the API runs the migrations on its first start, then seeds demo data because the database is empty.
 
@@ -73,8 +84,8 @@ In `.env`:
 ```bash
 # Managed services: REMOVE the COMPOSE_PROFILES=local-services line entirely
 
-DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx.eu-central-1.aws.neon.tech/library?sslmode=require
-DATABASE_SSL=true
+DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+DATABASE_URL_UNPOOLED=postgresql://USER:PASSWORD@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 
 S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 S3_REGION=auto
@@ -112,7 +123,7 @@ docker compose logs -f api
 The first start takes a few minutes: it builds the images, runs migrations on Neon, then seeds about 62k loans and uploads about 4.6k generated covers to R2. In the log, check that you see:
 
 ```
-[Services] Database: ep-xxxx….neon.tech (managed, TLS)
+[Services] Database: ep-xxxx-pooler….neon.tech (managed, TLS, pooled); migrations via direct ep-xxxx….neon.tech
 [Services] Object storage: <account>.r2.cloudflarestorage.com, bucket "library-covers" (managed)
 [Services] Help chat: enabled (openai/gpt-oss-20b via api.groq.com)
 [seed] Done in …
@@ -154,7 +165,9 @@ If it says **LOCAL container**, the `.env` values weren't picked up. Check the v
 | Symptom | Cause / fix |
 |---|---|
 | Browser shows a certificate error | DNS isn't pointing at the server yet, ports 80/443 are closed, or the record is proxied (orange cloud). Check `docker compose logs caddy`. |
-| `Unable to connect to the database` | Wrong `DATABASE_URL`, or `DATABASE_SSL` isn't `true` for Neon. |
+| `Unable to connect to the database` | Wrong `DATABASE_URL`, or a URL without `?sslmode=require` (add it, or set `DATABASE_SSL=true`). |
+| Log warns "pooled but DATABASE_URL_UNPOOLED is not set" | Add the direct URL (`npx neon@latest env pull`) so migrations don't go through the pooler. |
+| `SQLSTATE 53000` / "exceeded the quota" | The Neon Free plan's monthly compute or transfer ran out; see the Neon console's Billing page. |
 | `/api/health` says `"storage":"down"` | Wrong R2 endpoint or keys, the token isn't scoped to the bucket, or the bucket name differs from `S3_BUCKET`. The rest of the app keeps working meanwhile. |
 | Help chat says "misconfigured" | The key was rejected: check `AI_API_KEY` (and that `AI_BASE_URL` matches the provider the key is from). |
 | Help chat says "model not available" | The provider retired or doesn't have `AI_MODEL`. Pick a current model from the provider's list (Groq: console.groq.com/docs/models) and recreate the api container. |

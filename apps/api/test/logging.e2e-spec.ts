@@ -63,6 +63,15 @@ describe('Logging & error handling (e2e)', () => {
     expect(logs.find('error')).toHaveLength(0);
   });
 
+  it("shows a malformed query's real message (the client's mistake) and logs it as a warning", async () => {
+    const res = await admin.gql('{ me { email } }');
+
+    expect(errorCode(res)).toBe('GRAPHQL_VALIDATION_FAILED');
+    expect(res.errors![0].message).toBe('Cannot query field "me" on type "Query".');
+    expect(logs.find('warn', 'GRAPHQL_VALIDATION_FAILED')).not.toHaveLength(0);
+    expect(logs.find('error')).toHaveLength(0);
+  });
+
   it('hides an unexpected GraphQL error from the user but logs it with its stack under the same reference', async () => {
     jest.spyOn(BooksService.prototype, 'get').mockRejectedValueOnce(new Error('relation "secret_table" does not exist'));
 

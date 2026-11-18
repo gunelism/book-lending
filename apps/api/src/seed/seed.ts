@@ -17,6 +17,7 @@ import { DataSource, ObjectLiteral } from 'typeorm';
 import { hashPassword } from '../auth/password';
 import { isbn13WithCheckDigit } from '../books/isbn';
 import { validateEnv } from '../config/env';
+import { directDatabaseUrl } from '../database/connection';
 import { buildDataSourceOptions } from '../database/data-source';
 import { truncateAll } from '../database/truncate';
 import { Author, Book, BookCopy, CopyCondition, CopyStatus, Genre, Loan, LoanStatus, Member, Role, User } from '../entities';
@@ -46,7 +47,8 @@ async function main() {
   const now = new Date();
   const started = Date.now();
 
-  const ds = new DataSource(buildDataSourceOptions(env.DATABASE_URL, env.DATABASE_SSL));
+  // Direct connection: the seed may drop the schema and run migrations (see directDatabaseUrl).
+  const ds = new DataSource(buildDataSourceOptions(directDatabaseUrl(env), env.DATABASE_SSL));
   await ds.initialize();
 
   if (IF_EMPTY) {

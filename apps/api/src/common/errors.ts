@@ -62,6 +62,17 @@ export interface ErrorInfo {
   expected: boolean;
 }
 
+/** Codes Apollo gives to errors in the request itself, before any resolver runs. */
+const GRAPHQL_CLIENT_ERROR_CODES = new Set([
+  'GRAPHQL_PARSE_FAILED',
+  'GRAPHQL_VALIDATION_FAILED',
+  'BAD_USER_INPUT',
+  'BAD_REQUEST',
+  'OPERATION_RESOLUTION_FAILURE',
+  'PERSISTED_QUERY_NOT_FOUND',
+  'PERSISTED_QUERY_NOT_SUPPORTED',
+]);
+
 export const INTERNAL_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 /** One place that decides what any thrown error means, for GraphQL, REST and the logs. */
@@ -81,8 +92,9 @@ export function describeError(err: unknown): ErrorInfo {
   if (db) return { status: db.code === 'CONFLICT' ? 409 : 400, code: db.code, message: db.message, expected: true };
 
   // GraphQL parse / validation errors (unknown field, wrong variable type…) are the client's mistake and safe to show.
+  // Apollo wraps them (so they do have an originalError); recognise them by their code.
   const gqlCode = (err as any)?.extensions?.code as string | undefined;
-  if (gqlCode && gqlCode !== 'INTERNAL_SERVER_ERROR' && !(err as any)?.originalError) {
+  if (gqlCode && GRAPHQL_CLIENT_ERROR_CODES.has(gqlCode)) {
     return { status: 400, code: gqlCode, message: (err as any).message, expected: true };
   }
 

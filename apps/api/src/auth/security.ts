@@ -7,6 +7,7 @@ import session from 'express-session';
 import helmet from 'helmet';
 import { Pool } from 'pg';
 import { Env } from '../config/env';
+import { resolveDbConnection } from '../database/connection';
 
 export const SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000; // one working day
 
@@ -54,13 +55,24 @@ export function configureSecurity(app: INestApplication, env: Env): SecurityHand
 
   app.use(cookieParser());
 
+  const db = resolveDbConnection(env.DATABASE_URL, env.DATABASE_SSL);
   const pool = new Pool({
-    connectionString: env.DATABASE_URL,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: true } : undefined,
+    // Pooled URL on Neon: the store only runs single statements, which PgBouncer's transaction mode handles.
+    connectionString: db.url,
+    ssl: db.ssl ? { rejectUnauthorized: true } : undefined,
+    enableChannelBinding: db.enableChannelBinding,
     max: 5,
   });
   const PgStore = connectPgSimple(session);
-  const store = new PgStore({ pool, tableName: 'session', createTableIfMissing: false });
+  const store = new PgStore({
+    pool,
+    tableName: 'session',
+    createTableIfMissing: false,
+    // Expired sessions are already rejected on read, so the cleanup only reclaims space. Running it
+    // every 6 h instead of the default 15 min lets a serverless database (Neon) sleep when idle,
+    // instead of being woken all day and using up its free compute hours.
+    pruneSessionInterval: 6 * 60 * 60,
+  });
   // Release the session store's timer and connections when the app shuts down.
   const close = app.close.bind(app);
   app.close = async () => {
