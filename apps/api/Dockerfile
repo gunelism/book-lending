@@ -27,13 +27,15 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
-# --chmod: the image runs as the unprivileged "node" user, so files must be world-readable even when
-# the checkout has owner-only permissions (e.g. 600 on a Mac); otherwise npm can't read package.json.
-COPY --chmod=644 package.json package-lock.json ./
-COPY --chmod=644 apps/api/package.json apps/api/
-COPY --chmod=644 apps/admin/package.json apps/admin/
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/
+COPY apps/admin/package.json apps/admin/
 RUN npm ci --workspace apps/api --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/apps/api/dist apps/api/dist
+# The image runs as the unprivileged "node" user: make the app readable (files) and enterable (folders)
+# even when the checkout had owner-only permissions (e.g. 600 on a Mac). An explicit chmod, because
+# COPY --chmod also changes the folders it creates on some BuildKit versions (a 644 folder can't be entered).
+RUN chmod -R a+rX /app/package.json /app/package-lock.json /app/apps
 WORKDIR /app/apps/api
 # Never run as root.
 USER node
