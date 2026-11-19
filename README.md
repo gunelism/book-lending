@@ -6,12 +6,12 @@ A back office for a lending library, built with NestJS and TypeScript:
 - **book covers** in S3-compatible storage
 - a **Help chat** that explains the admin forms from their own field definitions
 
-Everything runs in Docker behind HTTPS. Postgres and storage run either as local containers or as managed services (Neon and Cloudflare R2).
+Everything runs in Docker behind HTTPS. Postgres and storage run either as local containers or as managed services (Neon Postgres and Neon Object Storage).
 
 ```
 browser ──HTTPS──▶ Caddy ──▶ admin SPA (React-Admin)
                      └────▶ API (NestJS: GraphQL + REST uploads) ──▶ PostgreSQL   (Neon / local)
-                                                                 ├─▶ S3 storage  (R2 / local)
+                                                                 ├─▶ S3 storage  (Neon / local)
                                                                  └─▶ LLM for Help chat (Groq free tier, optional)
 ```
 
@@ -22,7 +22,7 @@ Full reference (business rules, roles, admin features, security, logging, tests)
 **You need** Docker with Compose 2.20 or newer. That's all: Node, Postgres and S3 storage run in containers.
 
 ```bash
-cp .env.example .env        # replace every "change-me" value (secrets need 32+ characters)
+cp .env.example .env        # then fill in every empty secret (see the comments in the file)
 docker compose up --build   # first start runs migrations and seeds demo data (~1 min)
 ```
 
@@ -36,7 +36,7 @@ Open **https://localhost**. On the first visit, accept the browser's certificate
 **Optional:**
 - **Help chat:** get a free Groq key (no credit card) at console.groq.com/keys and set `AI_API_KEY` in `.env`. The **Help** button is at the bottom right of the admin.
 - **GitHub sign-in:** set `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`; see [details](docs/DETAILS.md#github-sign-in-optional).
-- **Managed database and storage instead of local containers:** remove `COMPOSE_PROFILES=local-services` from `.env` and point `DATABASE_URL` / `S3_*` at Neon and R2 ([DEPLOYMENT.md](DEPLOYMENT.md)).
+- **Managed database and storage instead of local containers:** run `npx neon@latest deploy` (it writes the database and bucket settings into `.env`) and remove `COMPOSE_PROFILES=local-services` ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
 **Useful commands:**
 
@@ -71,7 +71,7 @@ curl -k https://localhost/api/health
 - **Help chat grounded in the forms themselves.** Field help is written once, as descriptions on the GraphQL input types (NestJS's equivalent of Django's `help_text`).
   - The forms show that help, and the chat gets it in its prompt together with the real validation rules, so the two can't disagree.
   - It uses any OpenAI-compatible API through plain `fetch`, Groq's free tier by default, so it costs nothing and changing provider is only configuration.
-- **Where data lives is configuration only.** The same images run against local containers or managed Neon and R2. The API logs which one it's using at startup, so it never silently falls back to local.
+- **Where data lives is configuration only.** The same images run against local containers or managed Neon (Postgres + Object Storage). The API logs which one it's using at startup, so it never silently falls back to local.
   - If storage or the AI provider is down, only those features stop working.
 - **One place for errors.** Services throw, and one function decides what each error means and what the user sees.
   - Unexpected errors show the user a reference id, and the log has the full stack trace under that same id.

@@ -77,9 +77,8 @@ async function main() {
   if (removed) log(`Removed ${removed} old cover image(s) from object storage`);
 
   // ---------------- staff users ----------------
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
-  const staffPassword = process.env.SEED_STAFF_PASSWORD;
-  if (!adminPassword || !staffPassword) throw new Error('Set SEED_ADMIN_PASSWORD and SEED_STAFF_PASSWORD (see .env.example)');
+  const adminPassword = seedPassword('SEED_ADMIN_PASSWORD');
+  const staffPassword = seedPassword('SEED_STAFF_PASSWORD');
   const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? 'admin@library.local').toLowerCase();
   const [adminHash, staffHash] = await Promise.all([hashPassword(adminPassword), hashPassword(staffPassword)]);
   const users: Partial<User>[] = [
@@ -328,3 +327,12 @@ main().catch((err) => {
   console.error('[seed] failed:', err);
   process.exit(1);
 });
+
+/** The seeded accounts' passwords come only from the environment, and example values are refused. */
+function seedPassword(name: 'SEED_ADMIN_PASSWORD' | 'SEED_STAFF_PASSWORD'): string {
+  const value = process.env[name];
+  if (!value || value.length < 12 || /change-?me/i.test(value)) {
+    throw new Error(`${name} must be set to your own password of 12+ characters (not an example value); see .env.example`);
+  }
+  return value;
+}

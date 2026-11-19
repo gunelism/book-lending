@@ -26,10 +26,16 @@ x-api-env: &api-env
   DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
   DATABASE_URL_UNPOOLED: ${DATABASE_URL_UNPOOLED:-}   # Neon's direct URL, used for migrations + seed
   DATABASE_SSL: ${DATABASE_SSL:-false}
-  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  # Object storage, first match wins (see resolveStorageEnv): S3_ENDPOINT → Neon Object Storage
+  # (AWS_* written by `neon deploy`) → the local container.
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
   S3_REGION: ${S3_REGION:-us-east-1}
-  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+  AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  AWS_REGION: ${AWS_REGION:-}
   S3_BUCKET: ${S3_BUCKET:-library-covers}
   S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
   SESSION_SECRET: ${SESSION_SECRET}
@@ -143,6 +149,7 @@ services:
       DATABASE_URL_UNPOOLED: ""
       DATABASE_SSL: "false"
       S3_ENDPOINT: http://minio:9000
+      AWS_ENDPOINT_URL_S3: ""   # tests never touch Neon storage
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:-${S3_ACCESS_KEY}}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-${S3_SECRET_KEY}}
       S3_FORCE_PATH_STYLE: "true"

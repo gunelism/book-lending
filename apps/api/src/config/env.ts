@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Matches,
   MinLength,
   validateSync,
 } from 'class-validator';
@@ -17,6 +18,12 @@ const toBool = ({ value }: { value: unknown }) =>
  * Every setting the API reads. Validated once at boot so a missing secret
  * fails fast instead of surfacing as a confusing runtime error.
  */
+
+/** Rejects the example values once shipped in .env.example ("change-me-…"): a known secret is no secret. */
+function NotPlaceholder() {
+  return Matches(/^(?!.*change-?me)/i, { message: ({ property }) => `${property} is still an example value: generate one with  openssl rand -base64 48` });
+}
+
 export class Env {
   @IsIn(['development', 'production', 'test'])
   NODE_ENV: 'development' | 'production' | 'test' = 'development';
@@ -47,6 +54,10 @@ export class Env {
   @IsBoolean()
   DATABASE_SSL = false;
 
+  /** Where covers are stored: an explicit S3_* store, else Neon Object Storage (AWS_* vars from `neon deploy`), else the local container. */
+  @IsIn(['s3', 'neon', 'local'])
+  STORAGE_SOURCE: 's3' | 'neon' | 'local' = 'local';
+
   @IsUrl({ require_tld: false, require_protocol: true })
   S3_ENDPOINT: string;
 
@@ -68,10 +79,12 @@ export class Env {
 
   @IsString()
   @MinLength(32, { message: 'SESSION_SECRET must be at least 32 characters' })
+  @NotPlaceholder()
   SESSION_SECRET: string;
 
   @IsString()
   @MinLength(32, { message: 'CSRF_SECRET must be at least 32 characters' })
+  @NotPlaceholder()
   CSRF_SECRET: string;
 
   /** Secure cookies require HTTPS. Only the automated tests turn this off. */
@@ -116,7 +129,35 @@ export class Env {
   AI_TIMEOUT_MS = 20_000;
 }
 
+/**
+ * Picks ONE complete set of object-storage settings, so values from two stores never mix:
+ *  1. S3_ENDPOINT set           → that store, with the S3_* keys (any S3-compatible service)
+ *  2. AWS_ENDPOINT_URL_S3 set   → Neon Object Storage: `neon deploy` writes these AWS-standard vars
+ *                                 for the buckets declared in neon.ts. Neon requires path-style URLs.
+ *  3. neither                   → the local storage container (docker compose profile local-services)
+ */
+export function resolveStorageEnv(raw: Record<string, unknown>): Record<string, unknown> {
+  const has = (k: string) => typeof raw[k] === 'string' && raw[k] !== '';
+  // Already decided: Nest's ConfigModule copies the validated values (S3_ENDPOINT, STORAGE_SOURCE…)
+  // back into process.env, so a second validation must keep the decision, not re-derive it from the copies.
+  if (has('STORAGE_SOURCE')) return raw;
+  if (has('S3_ENDPOINT')) return { ...raw, STORAGE_SOURCE: 's3' };
+  if (has('AWS_ENDPOINT_URL_S3')) {
+    return {
+      ...raw,
+      STORAGE_SOURCE: 'neon',
+      S3_ENDPOINT: raw.AWS_ENDPOINT_URL_S3,
+      S3_ACCESS_KEY: raw.AWS_ACCESS_KEY_ID,
+      S3_SECRET_KEY: raw.AWS_SECRET_ACCESS_KEY,
+      S3_REGION: has('AWS_REGION') ? raw.AWS_REGION : raw.S3_REGION,
+      S3_FORCE_PATH_STYLE: 'true',
+    };
+  }
+  return { ...raw, STORAGE_SOURCE: 'local', S3_ENDPOINT: 'http://minio:9000' };
+}
+
 export function validateEnv(raw: Record<string, unknown>): Env {
+  raw = resolveStorageEnv(raw);
   const env = plainToInstance(Env, raw, { enableImplicitConversion: false, exposeDefaultValues: true });
   const errors = validateSync(env, { skipMissingProperties: false, whitelist: false });
   if (errors.length) {

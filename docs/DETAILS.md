@@ -262,7 +262,7 @@ docker compose --profile local-services --profile test run --rm api-test
 * **Where the data lives is decided only by `.env`.** `DATABASE_URL` can point at a managed Postgres such as Neon (`npx neon@latest deploy` writes it, plus the direct `DATABASE_URL_UNPOOLED` used for migrations) or Supabase, and `S3_*` at Cloudflare R2 or AWS S3. The local containers start only when `COMPOSE_PROFILES=local-services` is set.
 * **No silent fallback.** On startup the API logs the database host, the storage host and the AI model, each labelled *managed* or *LOCAL container*. It also warns if a production run is using the local stand-ins.
 * **Startup behaviour.** Migrations run on container start; demo data is seeded only into an empty database.
-* **Deploying:** step-by-step guide in **[DEPLOYMENT.md](../DEPLOYMENT.md)** (VPS + Docker Compose + Neon + R2 + automatic HTTPS).
+* **Deploying:** step-by-step guide in **[DEPLOYMENT.md](../DEPLOYMENT.md)** (VPS + Docker Compose + Neon Postgres + Neon Object Storage + automatic HTTPS).
 
 ## Project layout
 

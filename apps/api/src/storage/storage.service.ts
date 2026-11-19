@@ -34,9 +34,11 @@ export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private readonly client: S3Client;
   readonly bucket: string;
+  private readonly source: Env['STORAGE_SOURCE'];
 
   constructor(config: ConfigService<Env, true>) {
     this.bucket = config.get('S3_BUCKET', { infer: true });
+    this.source = config.get('STORAGE_SOURCE', { infer: true });
     this.client = new S3Client({
       endpoint: config.get('S3_ENDPOINT', { infer: true }),
       region: config.get('S3_REGION', { infer: true }),
@@ -55,7 +57,10 @@ export class StorageService implements OnModuleInit {
   onModuleInit() {
     this.ensureBucket().catch((err) =>
       this.logger.error(
-        `Object storage is unreachable or misconfigured (${err?.name ?? err}). The API keeps running; ` +
+        (err?.code === 'ENOTFOUND' && err?.hostname === 'minio'
+          ? 'S3_ENDPOINT points at the local "minio" container, which is not running — add COMPOSE_PROFILES=local-services to .env, or set S3_* to a managed store (DEPLOYMENT.md). '
+          : '') +
+          `Object storage is unreachable or misconfigured (${err?.message || err?.name || err}). The API keeps running; ` +
           `cover uploads/images return 503 until S3_ENDPOINT / credentials / bucket "${this.bucket}" are fixed.`,
       ),
     );
@@ -70,6 +75,10 @@ export class StorageService implements OnModuleInit {
       } catch (err: any) {
         const status = err?.$metadata?.httpStatusCode;
         if (status === 404 || err?.name === 'NotFound' || err?.name === 'NoSuchBucket') {
+          if (this.source === 'neon') {
+            // Neon buckets are infrastructure as code: created by `neon deploy` from neon.ts, not by the app.
+            throw new Error(`Bucket "${this.bucket}" does not exist in Neon Object Storage: declare it under "buckets" in neon.ts and run \`npx neon@latest deploy\` (S3_BUCKET must match).`);
+          }
           await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
           this.logger.log(`Created bucket "${this.bucket}"`);
           return;
