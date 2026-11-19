@@ -202,11 +202,11 @@ Code: `apps/api/src/common/logging/` and `src/common/errors.ts`. Tests: `logging
 | HTTPS | Caddy terminates TLS (local CA on `localhost`, automatic Let's Encrypt on a real domain), redirects HTTP to HTTPS, and sends HSTS. The API container isn't published to the host. |
 | Authorization failures | API: `FORBIDDEN` with a message naming the required role. Admin: hidden menus and buttons, read-only pages, and an "Access denied" page if a librarian opens a Staff URL directly. |
 | Outages | If storage is down, the API still starts, covers return `503 STORAGE_UNAVAILABLE`, and `/api/health` reports `degraded`. If the AI provider is down or rate-limited, the Help chat shows a friendly message and nothing else is affected. |
-| Headers and other hardening | Helmet on the API; CSP, `X-Frame-Options` and `nosniff` from Caddy for the SPA. Login is rate-limited to 5 per minute per IP. Production hides introspection and GraphiQL and masks internal errors. The API container runs as a non-root user. |
+| Headers and other hardening | Helmet on the API. For the SPA, CSP, `X-Frame-Options` and `nosniff` come from Caddy (Docker Compose) or from the API itself on Render (`src/admin-static.ts`). Login is rate-limited to 5 per minute per IP. Production hides introspection and GraphiQL and masks internal errors. The API container runs as a non-root user. |
 
 ## GitHub sign-in (optional)
 
-1. Create an OAuth app at https://github.com/settings/developers. Set the callback URL to `https://localhost/auth/github/callback`.
+1. Create an OAuth app at https://github.com/settings/developers. Set the callback URL to `https://localhost/auth/github/callback` locally, or `https://<your-service>.onrender.com/auth/github/callback` on Render (see [DEPLOYMENT.md](../DEPLOYMENT.md) step 3b).
 2. Put `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.env`, then run `docker compose up -d`.
 3. A **Sign in with GitHub** button appears on the login page:
    * A GitHub account whose verified primary email matches a staff user is linked to that user.

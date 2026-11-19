@@ -37,5 +37,11 @@ services:
       # Optional: Help chat (free key from console.groq.com/keys); leave empty to turn it off.
       - key: AI_API_KEY
         sync: false
+      # Optional: "Sign in with GitHub". OAuth app callback: https://<this service>.onrender.com/auth/github/callback
+      # (PUBLIC_URL defaults to Render's RENDER_EXTERNAL_URL). Leave empty to hide the button.
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
       - key: S3_BUCKET
         value: library-covers

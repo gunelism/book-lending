@@ -14,3 +14,11 @@ coverage/
 *.pem
 *.key
 .neon
+
+# Local AI coding-agent tooling (skills, MCP configs): personal setup, not part of the app
+.agents/
+.claude/
+.cursor/
+.codex/
+.mcp.json
+skills-lock.json

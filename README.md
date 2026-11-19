@@ -6,14 +6,31 @@ A back office for a lending library, built with NestJS and TypeScript:
 - **book covers** in S3-compatible storage
 - a **Help chat** that explains the admin forms from their own field definitions
 
-Everything runs in Docker behind HTTPS. Postgres and storage run either as local containers or as managed services (Neon Postgres and Neon Object Storage).
+**Live demo:** https://book-lending-68y1.onrender.com. The demo logins (one Admin, one Librarian) are in the submission email. The free tier sleeps after 15 idle minutes, so the first visit can take about a minute.
+
+Production runs on Render as one container, the API serving the admin too, with Neon Postgres and Neon Object Storage. Locally, Docker Compose runs the same app behind Caddy with HTTPS, against Neon or local containers.
 
 ```
-browser ──HTTPS──▶ Caddy ──▶ admin SPA (React-Admin)
-                     └────▶ API (NestJS: GraphQL + REST uploads) ──▶ PostgreSQL   (Neon / local)
-                                                                 ├─▶ S3 storage  (Neon / local)
-                                                                 └─▶ LLM for Help chat (Groq free tier, optional)
+browser ──HTTPS──▶ Render / Caddy ──▶ API (NestJS: GraphQL + REST uploads, serves the admin SPA)
+                                        ├─▶ PostgreSQL   (Neon / local container)
+                                        ├─▶ S3 storage   (Neon Object Storage / local container)
+                                        └─▶ LLM for Help chat (Groq free tier, optional)
 ```
+
+## Why this stack
+
+- **TypeScript end to end.** One language for the API, the admin and the validation rules shared between them.
+- **NestJS.** Modules, guards and pipes give a clear place for each concern. Role checks are declared once per resolver instead of scattered through handlers.
+- **GraphQL (code-first).** The admin gets one typed, self-documenting API. The input types double as the source of the forms' field help.
+- **React-Admin.** NestJS has no built-in admin, so this is the admin framework that provides the generated tooling:
+  - list views with filters, search and sorting
+  - inline editing of related records
+  - bulk actions
+  - role-aware menus
+
+  It works through the API instead of writing to the database directly, so every admin action goes through the same rules, locks and permission checks.
+- **TypeORM.** The ORM NestJS documents, with decorator-defined relations and versioned migrations.
+- **Neon + Render.** Neon provides managed Postgres and S3-compatible object storage in one free account. Render hosts the single container for free with HTTPS. Both are free tiers, so the whole deployment costs nothing.
 
 Full reference (business rules, roles, admin features, security, logging, tests): **[docs/DETAILS.md](docs/DETAILS.md)**. Deployment guide: **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
@@ -60,6 +77,8 @@ curl -k https://localhost/api/health
   - With React-Admin, every admin action goes through the same services and guards as any other client. The cost is more code per screen.
 - **Book → BookCopy → Loan.** A library lends physical copies, not titles. This gives real availability counts.
   - A partial unique index guarantees one active loan per copy.
+  - **The many-to-many relationship is Member ↔ BookCopy through Loan.** A member borrows many copies over time, and a copy is borrowed by many members. The join is a full entity, not a bare join table, because it carries data: dates, status, renewals and fines.
+  - Book → Author is a plain foreign key (one author per book); see [Deliberately skipped](#deliberately-skipped).
 - **Overdue is computed, never stored.** `ACTIVE and dueDate < now()` can't go stale, so no cron job is needed, and it's still filterable in SQL.
 - **Business rules are pure functions** (`loan-policy.ts`), applied inside transactions with row locks (`FOR UPDATE`, `SKIP LOCKED`). Two librarians can't lend the last copy twice, and a test proves it.
 - **TypeORM.** It's the integration NestJS documents. Relations are declared with decorators, migrations are versioned, and QueryBuilder is used only where the find API can't express a query (EXISTS subqueries, aggregates).
@@ -77,9 +96,19 @@ curl -k https://localhost/api/health
 - **One place for errors.** Services throw, and one function decides what each error means and what the user sees.
   - Unexpected errors show the user a reference id, and the log has the full stack trace under that same id.
 
+## Deliberately skipped
+
+- **Co-authors.** Each book has one author. The schema's many-to-many is Loan, which carries real data; a second join table would add admin and seed work without a new idea.
+- **Online payments.** Late fees are calculated (€0.25 per started day, capped at €20; a lost copy costs its replacement value), and unpaid fines over €10 block borrowing. Staff record a fine as paid, or an admin waives it; no payment provider is connected.
+- **Reservations and holds, reminder emails, multiple branches.** Each is real product work that adds no new technical idea here.
+- **A member-facing site.** Only staff use the app, through the admin, so there's no public API for members.
+- **Password reset by email and two-factor sign-in.** An admin resets a password from the Staff screen, which also signs that user out everywhere.
+- **Streaming and saved chat history.** The Help chat answers one question at a time; follow-ups are kept only while the panel is open.
+- **Frontend tests and CI.** The tests focus on the business rules, security and the AI integration (see below).
+
 ## What I'd do differently with more time
 
-- **Frontend tests and CI.** The 39 tests cover the API's rules, security, the AI integration and error handling, but there are no admin component tests and no Playwright suite. There is also no CI pipeline running tests, lint and the migration-drift check on every push. I'd add those first.
+- **Frontend tests and CI.** The 51 tests (24 unit, 27 end-to-end) cover the API's rules, security, the AI integration and error handling, but there are no admin component tests and no Playwright suite. There is also no CI pipeline running tests, lint and the migration-drift check on every push. I'd add those first.
 - **Generated GraphQL types for the admin.** The admin's queries are hand-written strings. I'd use GraphQL Code Generator from the start, so a schema change breaks the build instead of a screen.
 - **Cursor pagination** for the big lists, such as 62k loans. Offset pagination slows down on deep pages.
 - **Multiple API instances.** Rate limits are kept in memory. Running more than one API instance would need Redis for those (sessions are already in Postgres).
@@ -90,6 +119,7 @@ curl -k https://localhost/api/health
   - a fallback model list
   - a small set of evaluation questions run in CI
   - streamed answers
+- **Smaller commits from the start.** The history is coarse: the first commit holds the whole foundation (database, auth, API). I'd commit per feature so each decision can be reviewed on its own.
 - **Product features:**
   - overdue reminder emails (a job queue)
   - reservations and holds
