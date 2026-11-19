@@ -51,12 +51,20 @@ describe('resolveStorageEnv: one complete storage source, never a mix', () => {
     expect(env).toMatchObject({ STORAGE_SOURCE: 's3', S3_ENDPOINT: 'https://acc.r2.cloudflarestorage.com', S3_ACCESS_KEY: 'library' });
   });
 
-  it('keeps its decision when validated again after ConfigModule copied the results into process.env', () => {
-    const first = resolveStorageEnv({ ...LOCAL_KEYS, ...NEON });
-    const processEnvAfterConfigModule = { ...LOCAL_KEYS, ...NEON, S3_ENDPOINT: first.S3_ENDPOINT, STORAGE_SOURCE: first.STORAGE_SOURCE };
+  it.each([
+    ['docker compose passes S3_ENDPOINT as an empty string', ''],
+    ['S3_ENDPOINT was absent, so ConfigModule copied in the resolved endpoint', 'https://storage.eu-central-1.aws.neon.tech'],
+  ])('gives the same answer when validated again after ConfigModule copied its results into process.env (%s)', (_case, s3Endpoint) => {
+    const processEnv = { ...BASE, ...LOCAL_KEYS, ...NEON, S3_ENDPOINT: s3Endpoint };
+    const first = validateEnv(processEnv);
+    // ConfigModule.assignVariablesToProcess: copies validated keys that are absent from process.env
+    const afterCopy: Record<string, unknown> = { ...processEnv };
+    for (const [k, v] of Object.entries(first)) if (!(k in afterCopy)) afterCopy[k] = String(v);
 
-    expect(resolveStorageEnv(processEnvAfterConfigModule)).toMatchObject({ STORAGE_SOURCE: 'neon', S3_ENDPOINT: NEON.AWS_ENDPOINT_URL_S3 });
-    expect(validateEnv({ ...BASE, ...processEnvAfterConfigModule }).STORAGE_SOURCE).toBe('neon');
+    const second = validateEnv(afterCopy);
+    expect([first.STORAGE_SOURCE, second.STORAGE_SOURCE]).toEqual(['neon', 'neon']);
+    expect(second.S3_ENDPOINT).toBe(NEON.AWS_ENDPOINT_URL_S3);
+    expect(second.S3_ACCESS_KEY).toBe('neon-key');
   });
 
   it('falls back to the local container when neither is configured', () => {

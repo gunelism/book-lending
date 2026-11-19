@@ -36,6 +36,7 @@ Open **https://localhost**. On the first visit, accept the browser's certificate
 **Optional:**
 - **Help chat:** get a free Groq key (no credit card) at console.groq.com/keys and set `AI_API_KEY` in `.env`. The **Help** button is at the bottom right of the admin.
 - **GitHub sign-in:** set `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`; see [details](docs/DETAILS.md#github-sign-in-optional).
+- **Free public deploy:** Render runs the one-container image (`Dockerfile` + `render.yaml`) at `https://<name>.onrender.com`; see [DEPLOYMENT.md](DEPLOYMENT.md).
 - **Managed database and storage instead of local containers:** run `npx neon@latest deploy` (it writes the database and bucket settings into `.env`) and remove `COMPOSE_PROFILES=local-services` ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
 **Useful commands:**

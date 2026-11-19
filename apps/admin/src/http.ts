@@ -12,8 +12,15 @@ export function setCsrfToken(token: string | null | undefined) {
 }
 
 async function fetchCsrfToken(): Promise<string> {
-  const res = await fetch('/auth/csrf', { credentials: 'same-origin' });
-  const body = await res.json();
+  let res: Response;
+  try {
+    res = await fetch('/auth/csrf', { credentials: 'same-origin' });
+  } catch {
+    throw new HttpError("Can't reach the server. Check your connection and try again.", 0);
+  }
+  const text = await res.text();
+  const body = text ? safeJson(text) : null;
+  if (!res.ok || !body?.csrfToken) throw new HttpError(errorMessage(res.status, body), res.status, body);
   csrfToken = body.csrfToken;
   return csrfToken!;
 }

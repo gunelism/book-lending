@@ -92,7 +92,12 @@ export class Env {
   @IsBoolean()
   COOKIE_SECURE = true;
 
-  /** Public origin of the app, used for OAuth redirects. */
+  /** Built admin to serve from the API (one-container deploys such as Render); unset with docker compose. */
+  @IsOptional()
+  @IsString()
+  ADMIN_DIR?: string;
+
+  /** Public origin of the app, used for OAuth redirects. Defaults to Render's RENDER_EXTERNAL_URL when set. */
   @IsUrl({ require_tld: false, require_protocol: true })
   PUBLIC_URL = 'https://localhost';
 
@@ -138,10 +143,10 @@ export class Env {
  */
 export function resolveStorageEnv(raw: Record<string, unknown>): Record<string, unknown> {
   const has = (k: string) => typeof raw[k] === 'string' && raw[k] !== '';
-  // Already decided: Nest's ConfigModule copies the validated values (S3_ENDPOINT, STORAGE_SOURCE…)
-  // back into process.env, so a second validation must keep the decision, not re-derive it from the copies.
-  if (has('STORAGE_SOURCE')) return raw;
-  if (has('S3_ENDPOINT')) return { ...raw, STORAGE_SOURCE: 's3' };
+  // Decided from the user's inputs only, so it gives the same answer when run again: Nest's ConfigModule
+  // copies validated values into process.env for keys that are absent there (an empty S3_ENDPOINT from
+  // docker compose stays empty), and a copied S3_ENDPOINT equal to Neon's endpoint is not an explicit store.
+  if (has('S3_ENDPOINT') && raw.S3_ENDPOINT !== raw.AWS_ENDPOINT_URL_S3) return { ...raw, STORAGE_SOURCE: 's3' };
   if (has('AWS_ENDPOINT_URL_S3')) {
     return {
       ...raw,
@@ -158,6 +163,7 @@ export function resolveStorageEnv(raw: Record<string, unknown>): Record<string, 
 
 export function validateEnv(raw: Record<string, unknown>): Env {
   raw = resolveStorageEnv(raw);
+  if (!raw.PUBLIC_URL && raw.RENDER_EXTERNAL_URL) raw = { ...raw, PUBLIC_URL: raw.RENDER_EXTERNAL_URL };
   const env = plainToInstance(Env, raw, { enableImplicitConversion: false, exposeDefaultValues: true });
   const errors = validateSync(env, { skipMissingProperties: false, whitelist: false });
   if (errors.length) {

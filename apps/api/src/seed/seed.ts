@@ -61,6 +61,10 @@ async function main() {
     log('Empty database detected — seeding demo data (first start only)…');
   }
 
+  // Checked before anything is deleted (but only when we really seed, not on every container start).
+  const adminPassword = seedPassword('SEED_ADMIN_PASSWORD');
+  const staffPassword = seedPassword('SEED_STAFF_PASSWORD');
+
   if (RESET) {
     log('Dropping schema and re-running migrations…');
     await ds.dropDatabase();
@@ -77,8 +81,6 @@ async function main() {
   if (removed) log(`Removed ${removed} old cover image(s) from object storage`);
 
   // ---------------- staff users ----------------
-  const adminPassword = seedPassword('SEED_ADMIN_PASSWORD');
-  const staffPassword = seedPassword('SEED_STAFF_PASSWORD');
   const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? 'admin@library.local').toLowerCase();
   const [adminHash, staffHash] = await Promise.all([hashPassword(adminPassword), hashPassword(staffPassword)]);
   const users: Partial<User>[] = [
